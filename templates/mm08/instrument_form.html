@@ -1,0 +1,14 @@
+{% extends "mm08/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="mm-card">
+  <h2>{{ title }}</h2>
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {{ form.as_p }}
+    <button class="mm-btn" type="submit">Сохранить</button>
+    <a class="mm-btn" style="background:#666" href="{% url 'mm08:instrument_list' %}">Отмена</a>
+  </form>
+</div>
+{% endblock %}
