@@ -1,0 +1,51 @@
+{% extends "mm08/base.html" %}
+{% block title %}График {{ instrument.ticker }}{% endblock %}
+{% block content %}
+<h2>График {{ instrument.ticker }} (интервал {{ interval }} мин)</h2>
+<p><a href="{% url 'mm08:candle_list' instrument.ticker %}">Таблица свечей</a></p>
+
+<form method="get" style="margin-bottom:12px">
+    <label>Интервал (мин):</label>
+    <select name="interval" onchange="this.form.submit()">
+        {% for iv in intervals %}
+        <option value="{{ iv }}" {% if iv == interval %}selected{% endif %}>{{ iv }}</option>
+
+        {% endfor %}
+    </select>
+</form>
+
+
+
+<canvas id="lineChart" height="120"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    (async function () {
+        const resp = await fetch("{% url 'mm08:chart_data' instrument.ticker %}?interval={{ interval }}");
+        const payload = await resp.json();
+        const labels = payload.data.map(d => d.t);
+        const closes = payload.data.map(d => d.c);
+
+        const ctx = document.getElementById('lineChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Close',
+                    data: closes,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                parsing: false,
+                scales: {
+                    x: { ticks: { maxTicksLimit: 12 }, title: { display: true, text: 'Time' } },
+                    y: { title: { display: true, text: 'Price' } }
+                }
+            }
+        });
+    })();
+</script>
+{% endblock %}

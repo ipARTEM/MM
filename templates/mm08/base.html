@@ -40,7 +40,8 @@
     <header>
         <h1>MM — проект </h1>
         <nav>
-            <a href="/">Главная</a>
+            <a href="{% url 'mm08:home' %}">Главная</a> |
+            <a href="{% url 'mm08:instrument_list' %}">Инструменты</a> |
             <a href="/admin/">Админка</a>
         </nav>
     </header>

@@ -7,3 +7,4 @@ staticfiles/
 media/
 .vscode/
 *.sqlite3
+db.sqlite3
