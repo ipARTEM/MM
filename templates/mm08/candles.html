@@ -1,0 +1,27 @@
+{% extends "mm08/base.html" %}
+{% block title %}Свечи {{ instrument.ticker }}{% endblock %}
+{% block content %}
+<h2>Свечи {{ instrument.ticker }} ({{ instrument.get_engine_display|default:instrument.engine }}/{{ instrument.market }})</h2>
+<table border="1" cellpadding="6" cellspacing="0">
+  <thead>
+    <tr>
+      <th>DT</th><th>Interval</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in candles %}
+      <tr>
+        <td>{{ c.dt }}</td>
+        <td>{{ c.get_interval_display }}</td>
+        <td>{{ c.open }}</td>
+        <td>{{ c.high }}</td>
+        <td>{{ c.low }}</td>
+        <td>{{ c.close }}</td>
+        <td>{{ c.volume }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7">Нет данных. Загрузите свечи.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

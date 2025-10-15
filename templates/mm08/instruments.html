@@ -1,0 +1,17 @@
+{% extends "mm08/base.html" %}
+{% block title %}Инструменты{% endblock %}
+{% block content %}
+<h2>Инструменты</h2>
+<ul>
+  {% for i in instruments %}
+    <li>
+      <b>{{ i.ticker }}</b> — {{ i.shortname }} ({{ i.engine }}/{{ i.market }}/{{ i.board }})
+      — <a href="{% url 'mm08:candle_list' i.ticker %}">свечи</a>
+      — <a href="{% url 'mm08:chart' i.ticker %}?interval=60">график</a>
+
+    </li>
+  {% empty %}
+    <li>Пусто. Загрузите данные командой <code>load_moex</code>.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

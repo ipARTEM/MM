@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}MM08{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+            margin: 20px;
+            background-color: #f8f9fa;
+        }
+        header {
+            background-color: #004080;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+        }
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin-right: 15px;
+            font-weight: 500;
+        }
+        nav a:hover {
+            text-decoration: underline;
+        }
+        main {
+            margin-top: 20px;
+        }
+        footer {
+            margin-top: 30px;
+            text-align: center;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>MM — проект </h1>
+        <nav>
+            <a href="{% url 'mm08:home' %}">Главная</a> |
+            <a href="{% url 'mm08:instrument_list' %}">Инструменты</a> |
+            <a href="/admin/">Админка</a>
+        </nav>
+    </header>
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <hr>
+        <p>© 2025 MM | MM08 | Artem Khimin</p>
+    </footer>
+</body>
+</html>
