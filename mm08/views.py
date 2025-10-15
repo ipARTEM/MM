@@ -1,7 +1,8 @@
 # D:\MM\mm08\views.py
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
-from django.shortcuts import get_object_or_404, render
+from django.contrib import messages
+from django.shortcuts import get_object_or_404, render, redirect
 from django.utils.dateparse import parse_datetime
 from django.urls import reverse
 from django.http import JsonResponse
@@ -15,25 +16,18 @@ def home(request):
 
 
 def chart(request, ticker: str):
-    inst = get_object_or_404(Instrument, ticker=ticker.upper())
-    # допустимые интервалы
-    intervals = [1, 10, 60, 1440]
-    try:
-        interval = int(request.GET.get("interval", 60))
-    except (TypeError, ValueError):
-        interval = 60
-    if interval not in intervals:
-        interval = 60
+    t = (ticker or "").strip()
+    instrument = Instrument.objects.filter(ticker__iexact=t).first()
+    if not instrument:
+        messages.error(request, f"Инструмент «{ticker}» не найден.")
+        return redirect("mm08:instrument_list")
 
-    return render(
-        request,
-        "mm08/chart.html",
-        {
-            "instrument": inst,
-            "interval": interval,
-            "intervals": intervals,  # <-- передаём в шаблон
-        },
-    )
+    interval = request.GET.get("interval", "60")
+    return render(request, "mm08/chart.html", {
+        "title": f"График {instrument.ticker}",
+        "instrument": instrument,
+        "interval": interval,
+    })
 
 def chart_data(request, ticker: str):
     inst = get_object_or_404(Instrument, ticker=ticker.upper())
@@ -60,9 +54,23 @@ def instrument_list(request):
     return render(request, "mm08/instruments.html", {"instruments": instruments})
 
 def candle_list(request, ticker: str):
-    inst = get_object_or_404(Instrument, ticker=ticker.upper())
-    candles = inst.candles.order_by("-dt")[:300]  # последние 300
-    return render(request, "mm08/candles.html", {"instrument": inst, "candles": candles})
+    t = (ticker or "").strip()
+    instrument = Instrument.objects.filter(ticker__iexact=t).first()
+    if not instrument:
+        messages.error(request, f"Инструмент «{ticker}» не найден.")
+        return redirect("mm08:instrument_list")
+
+    interval = request.GET.get("interval")  # если передаётся — можешь использовать в фильтре
+    qs = Candle.objects.filter(instrument=instrument)
+    if interval:
+        qs = qs.filter(interval=interval)
+    candles = qs.order_by("-dt")[:500]
+
+    return render(request, "mm08/candles.html", {
+        "title": f"Свечи {instrument.ticker}",
+        "instrument": instrument,
+        "candles": candles,
+    })
 
 
 def instrument_create(request):
