@@ -1,8 +1,9 @@
 pycache/
 .venv/
 .env
-*.py[cod]
+# *.py[cod]
 *$py.class
 staticfiles/
 media/
 .vscode/
+*.sqlite3

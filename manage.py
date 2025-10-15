@@ -11,7 +11,7 @@ def main():
     if "runserver" in sys.argv and len(sys.argv) == 2:
 
         # читать из переменной окружения
-        addrport = os.getenv("RUN_ADDRPORT", "0.0.0.0:8088")
+        addrport = os.getenv("RUN_ADDRPORT", "localhost:8088")
         sys.argv.append(addrport)
 
     from django.core.management import execute_from_command_line
