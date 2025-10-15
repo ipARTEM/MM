@@ -16,6 +16,20 @@ class Instrument(models.Model):
         verbose_name = "Инструмент"
         verbose_name_plural = "Инструменты"
 
+    def save(self, *args, **kwargs):
+        # приведение к каноничному виду
+        if self.ticker:
+            self.ticker = self.ticker.strip().upper()   # убираем пробелы и делаем UPPER
+        if self.secid:
+            self.secid = self.secid.strip().upper()
+        if self.board:
+            self.board = self.board.strip().upper()
+        if self.engine:
+            self.engine = self.engine.strip().lower()
+        if self.market:
+            self.market = self.market.strip().lower()
+        super().save(*args, **kwargs)
+
     def __str__(self) -> str:
         return self.ticker
 

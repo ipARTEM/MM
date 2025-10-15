@@ -1,58 +1,45 @@
-<!DOCTYPE html>
+{% load static %}
+<!doctype html>
 <html lang="ru">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}MM08{% endblock %}</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
-    <style>
-        body {
-            font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-            margin: 20px;
-            background-color: #f8f9fa;
-        }
-        header {
-            background-color: #004080;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 10px;
-        }
-        nav a {
-            color: white;
-            text-decoration: none;
-            margin-right: 15px;
-            font-weight: 500;
-        }
-        nav a:hover {
-            text-decoration: underline;
-        }
-        main {
-            margin-top: 20px;
-        }
-        footer {
-            margin-top: 30px;
-            text-align: center;
-            color: #666;
-        }
-    </style>
+    <title>{% block title %}MM — проект{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <script defer src="{% static 'js/app.js' %}"></script>
 </head>
+
 <body>
-    <header>
-        <h1>MM — проект </h1>
-        <nav>
-            <a href="{% url 'mm08:home' %}">Главная</a> |
-            <a href="{% url 'mm08:instrument_list' %}">Инструменты</a> |
-            <a href="/admin/">Админка</a>
-        </nav>
+    <header class="mm-nav">
+        <div class="mm-container">
+            <a class="mm-brand" href="{% url 'mm08:home' %}">MM — проект</a>
+            <button class="mm-burger" id="menuToggle" aria-label="Меню">☰</button>
+            {% with request.resolver_match.url_name as cur %}
+            <nav class="mm-menu" id="mainMenu">
+                <a class="mm-link {% if cur == 'home' %}active{% endif %}" href="{% url 'mm08:home' %}">Главная</a>
+                <a class="mm-link {% if cur == 'instrument_list' %}active{% endif %}"
+                    href="{% url 'mm08:instrument_list' %}">Инструменты</a>
+                <a class="mm-link {% if cur == 'candle_filter' %}active{% endif %}"
+                    href="{% url 'mm08:candle_filter' %}">Фильтр свечей</a>
+                <a class="mm-link {% if cur == 'dashboard' %}active{% endif %}"
+                    href="{% url 'mm08:dashboard' %}">Дашборд</a>
+                <a class="mm-link" href="{% url 'admin:index' %}">Админка</a>
+            </nav>
+            {% endwith %}
+        </div>
     </header>
 
-    <main>
+    <main class="mm-container mm-main">
         {% block content %}{% endblock %}
     </main>
 
-    <footer>
-        <hr>
-        <p>© 2025 MM | MM08 | Artem Khimin</p>
+    <footer class="mm-footer">
+        <div class="mm-container">
+            <p>© {% now "Y" %} MM | MM08 | Artem Khimin</p>
+        </div>
     </footer>
+
 </body>
+
 </html>

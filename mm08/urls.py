@@ -4,14 +4,16 @@ from . import views
 app_name = "mm08"
 
 urlpatterns = [
-    # path('', views.index, name='index'),
     path("", views.home, name="home"),
     path("instruments/", views.instrument_list, name="instrument_list"),
-    path("candles/<str:ticker>/", views.candle_list, name="candle_list"),
+    path("candles/filter/", views.candle_filter, name="candle_filter"),
 
-    # Роуты для графиков
+    path("candles/<str:ticker>/", views.candle_list, name="candle_list"),
     path("chart/<str:ticker>/", views.chart, name="chart"),
     path("chart/<str:ticker>/data/", views.chart_data, name="chart_data"),
+
+    path("instruments/new/", views.instrument_create, name="instrument_create"),
+    path("dashboard/", views.dashboard, name="dashboard"),
 
 
     # API

@@ -1,0 +1,16 @@
+{% extends "mm08/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="mm-card">
+  <h2>{{ title }}</h2>
+  <form method="get">
+    {{ form.as_p }}
+    <button class="mm-btn" type="submit">Показать</button>
+  </form>
+  <p style="margin-top:12px;">
+    Быстрые ссылки:
+    <a class="mm-btn" href="{% url 'mm08:instrument_list' %}">Инструменты</a>
+    <a class="mm-btn" href="{% url 'mm08:dashboard' %}">Дашборд</a>
+  </p>
+</div>
+{% endblock %}

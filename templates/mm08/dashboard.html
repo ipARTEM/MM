@@ -1,0 +1,31 @@
+{% extends "mm08/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="mm-card">
+  <h2>{{ title }}</h2>
+  <p>Активных инструментов: <b>{{ total_active }}</b></p>
+  <table class="mm-table">
+    <thead>
+      <tr><th>Тикер</th><th>Название</th><th>Маркет</th><th>Последняя свеча</th><th>Действия</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.ticker }}</td>
+        <td>{{ r.shortname }}</td>
+        <td>{{ r.market }}</td>
+        <td>{% if r.last_dt %}{{ r.last_dt|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td>
+        <td>
+          <a class="mm-btn" href="{% url 'mm08:candle_list' r.ticker %}">Свечи</a>
+          <a class="mm-btn" href="{% url 'mm08:chart' r.ticker %}?interval=60">График</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p style="margin-top:12px;">
+    <a class="mm-btn" href="{% url 'mm08:instrument_create' %}">+ Добавить инструмент</a>
+    <a class="mm-btn" href="{% url 'mm08:candle_filter' %}">Фильтр свечей</a>
+  </p>
+</div>
+{% endblock %}
