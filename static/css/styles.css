@@ -1,8 +1,8 @@
 /* === Базовые переменные темы === */
 :root {
-    --bg: #0b499b;
+    --bg: #10386c;
     /* тёмно-синий фон хедера */
-    --bg-2: #3c78e0;
+    --bg-2: #1b4388;
     --text: #111;
     --text-inv: #fff;
     --muted: #667085;
@@ -218,7 +218,7 @@ h2 {
     margin: 10px 0 14px;
 }
 
-/* Хлебные крошки (если добавишь) */
+/* Хлебные крошки */
 .mm-breadcrumbs {
     color: var(--muted);
     font-size: 14px;
@@ -228,4 +228,182 @@ h2 {
 .mm-breadcrumbs a {
     color: var(--brand);
     text-decoration: none;
+}
+
+/* базовый вид ссылок в топ-меню */
+header nav a {
+    display: inline-block;
+    padding: 8px 14px;
+    border-radius: 8px 8px 0 0;
+    /* скругление по умолчанию */
+    text-decoration: none;
+}
+
+/* активный пункт — скругление только сверху, низ ровный */
+header nav a.active {
+    border-radius: 8px 8px 0 0;
+    /* ← НЕТ скругления снизу */
+}
+
+/* при наведении/фокусе тоже без скругления снизу */
+header nav a:hover,
+header nav a:focus,
+header nav a:focus-visible {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+
+/* Навбар в 1 строку: бренд | меню | auth */
+.mm-navrow {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.mm-brand {
+    font-weight: 700;
+    font-size: 20px;
+    text-decoration: none;
+    color: #e7eefc;
+}
+
+.mm-menu {
+    display: flex;
+    gap: 16px;
+}
+
+.mm-auth {
+    margin-left: auto;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.mm-user {
+    color: #e7eefc;
+    opacity: .95;
+}
+
+/* Мобильная адаптация: меню и auth прячем в бургер */
+@media (max-width: 880px) {
+
+    .mm-menu,
+    .mm-auth {
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        background: rgba(255, 255, 255, .06);
+        padding: 10px 12px;
+        border-radius: 12px;
+    }
+
+    .mm-menu.open,
+    .mm-auth.open {
+        display: flex;
+    }
+
+    .mm-burger {
+        display: block;
+        margin-left: 8px;
+    }
+}
+
+/* На десктопе бургер скрыт */
+@media (min-width: 881px) {
+    .mm-burger {
+        display: none;
+    }
+}
+
+
+/* Общие */
+.mm-brand {
+    font-weight: 700;
+    font-size: 20px;
+    text-decoration: none;
+    color: #e7eefc;
+}
+
+.mm-link {
+    text-decoration: none;
+    color: #e7eefc;
+    opacity: .9;
+}
+
+.mm-link.active {
+    background: #e7eefc;
+    color: #0a3770;
+    padding: 6px 14px;
+    border-radius: 10px;
+}
+
+.mm-burger {
+    display: none;
+    color: #e7eefc;
+    font-size: 20px;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+/* Этаж 1 */
+.mm-topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 52px;
+}
+
+.mm-auth {
+    margin-left: auto;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.mm-user {
+    color: #e7eefc;
+    font-weight: 500;
+}
+
+/* Этаж 2 */
+.mm-menubar {
+    display: flex;
+    /* justify-content:flex-end; меню справа */
+    padding-bottom: 6px 6px 0 0;
+    border-radius: 12px 12px 0 0;
+}
+
+.mm-menu {
+    display: flex;
+    gap: 18px;
+}
+
+/* Мобильная адаптация */
+@media (max-width: 880px) {
+    .mm-burger {
+        display: block;
+        margin-left: 8px;
+    }
+
+    .mm-menubar {
+        justify-content: stretch;
+    }
+
+    .mm-menu {
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        background: rgba(255, 255, 255, .06);
+        padding: 10px 12px;
+        border-radius: 12px 12px 0 0;
+        width: 100%;
+    }
+
+    .mm-menu.open {
+        display: flex;
+    }
 }

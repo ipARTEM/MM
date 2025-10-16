@@ -1,0 +1,17 @@
+{% extends "mm08/base.html" %}
+{% block title %}Профиль{% endblock %}
+{% block content %}
+<div class="mm-card" style="max-width:720px;">
+  <h2>Профиль</h2>
+  <p><b>Пользователь:</b> {{ request.user }}</p>
+  <p><b>E-mail:</b> {{ request.user.email|default:"—" }}</p>
+  <p><b>Роль:</b> {{ request.user.get_role_display }}</p>
+  <p>
+    {% if request.user.is_manager %}
+      У вас <b>полный доступ</b>.
+    {% else %}
+      У вас <b>ограниченный доступ</b> (только просмотр).
+    {% endif %}
+  </p>
+</div>
+{% endblock %}
