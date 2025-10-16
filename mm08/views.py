@@ -1,9 +1,10 @@
 from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.http import JsonResponse, HttpResponseRedirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import TemplateView, ListView, CreateView, FormView, DetailView
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.db.models import Max
 
 from .models import Instrument, Candle
@@ -47,16 +48,17 @@ class HomeView(TemplateView):
         return {"title": "MM08 — старт"}
 
 
-class InstrumentListView(ListView):
+class InstrumentListView(LoginRequiredMixin,ListView):
     model = Instrument
     template_name = "mm08/instruments.html"
     context_object_name = "instruments"
     queryset = Instrument.objects.order_by("ticker")
 
 
-class InstrumentCreateView(CreateView):
+class InstrumentCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Instrument
     form_class = InstrumentForm
+    permission_required = "mm08.add_instrument"
     template_name = "mm08/instrument_form.html"
     success_url = reverse_lazy("mm08:instrument_list")
 
@@ -80,7 +82,7 @@ class CandleFilterView(FormView):
         return {"title": "Фильтр свечей", "form": self.get_form()}
 
 
-class CandleListView(InstrumentByTickerMixin, ListView):
+class CandleListView(LoginRequiredMixin, InstrumentByTickerMixin, ListView):
     """Список свечей по инструменту."""
     model = Candle
     template_name = "mm08/candles.html"
@@ -100,7 +102,7 @@ class CandleListView(InstrumentByTickerMixin, ListView):
         return ctx
 
 
-class ChartView(InstrumentByTickerMixin, TemplateView):
+class ChartView(LoginRequiredMixin, InstrumentByTickerMixin, TemplateView):
     template_name = "mm08/chart.html"
 
     def get_context_data(self, **kwargs):
@@ -123,7 +125,7 @@ class ChartDataView(InstrumentByTickerMixin, View):
         return JsonResponse({"data": data})
 
 
-class DashboardView(TemplateView):
+class DashboardView(LoginRequiredMixin, TemplateView):
     template_name = "mm08/dashboard.html"
 
     def get_context_data(self, **kwargs):
@@ -158,3 +160,10 @@ class InstrumentDetailView(InstrumentByTickerMixin, DetailView):
                                .filter(instrument=self.instrument)
                                .order_by("-dt")[:50])
         return ctx
+
+
+def custom_permission_denied(request, exception=None):
+    """Дружелюбная страница 403."""
+    response = render(request, "mm08/403.html", status=403)
+    response.status_code = 403
+    return response

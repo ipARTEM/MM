@@ -20,5 +20,9 @@ from django.urls import path, include
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("allusers/", include("allusers.urls")),
     path("", include(("mm08.urls", "mm08"), namespace="mm08")),
 ]
+
+
+handler403 = "mm08.views.custom_permission_denied"

@@ -1,0 +1,13 @@
+{% extends "mm08/base.html" %}
+{% block title %}Вход{% endblock %}
+{% block content %}
+<div class="mm-card" style="max-width:520px;">
+  <h2>Вход</h2>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="mm-btn" type="submit">Войти</button>
+    <a class="mm-btn ghost" href="{% url 'allusers:register' %}">Регистрация</a>
+  </form>
+</div>
+{% endblock %}

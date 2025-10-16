@@ -13,6 +13,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+from django.conf.urls import handler403
+
+handler403 = "mm08.views.custom_permission_denied"
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -50,6 +53,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "allusers",
     "mm08"
 ]
 
@@ -62,6 +66,13 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+AUTH_USER_MODEL = "allusers.User"    
+
+LOGIN_URL = "allusers:login"
+LOGIN_REDIRECT_URL = "mm08:home"
+LOGOUT_REDIRECT_URL = "mm08:home"
+
 
 ROOT_URLCONF = "MM.urls"
 

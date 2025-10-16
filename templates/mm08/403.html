@@ -1,0 +1,17 @@
+{% extends "mm08/base.html" %}
+{% block title %}Доступ запрещён{% endblock %}
+{% block content %}
+<div class="mm-card" style="text-align:center; padding:40px;">
+  <h2 style="color:#d93025;">🚫 Доступ запрещён</h2>
+  <p>У вас нет прав для выполнения этого действия.</p>
+  {% if request.user.is_authenticated %}
+    <p>Вы вошли как <b>{{ request.user.username }}</b>.</p>
+    <p>Если считаете, что это ошибка — обратитесь к администратору проекта.</p>
+  {% else %}
+    <p>Пожалуйста, <a href="{% url 'allusers:login' %}">войдите в систему</a> с нужными правами.</p>
+  {% endif %}
+  <p style="margin-top:20px;">
+    <a class="mm-btn" href="{% url 'mm08:home' %}">← На главную</a>
+  </p>
+</div>
+{% endblock %}

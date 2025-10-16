@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils import timezone
+from django.conf import settings
 
 
 # --- БАЗА ДЛЯ ВСЕХ МОДЕЛЕЙ ---
@@ -37,6 +38,12 @@ class Instrument(TimeStampedModel):   # ← наследуемся
         if self.market:   self.market   = self.market.strip().lower()
         super().save(*args, **kwargs)
 
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="instruments",
+        verbose_name="Владелец"
+    )
+
     def __str__(self) -> str:
         return self.ticker
 
@@ -66,6 +73,12 @@ class Candle(TimeStampedModel):       # ← наследуемся
         unique_together = (("instrument", "dt", "interval"),)
         indexes = [models.Index(fields=["instrument", "interval", "dt"])]
         ordering = ["-dt"]
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="candles_created",
+        verbose_name="Кем загружена"
+    )
 
     def __str__(self) -> str:
         return f"{self.instrument.ticker} {self.dt} [{self.get_interval_display()}]"
