@@ -1,0 +1,37 @@
+{% extends "mm08/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="mm-card">
+  <h2>{{ title }}</h2>
+  <p><b>Тикер:</b> {{ instrument.ticker }}</p>
+  <p><b>Название:</b> {{ instrument.shortname }}</p>
+  <p><b>Рынок:</b> {{ instrument.engine }}/{{ instrument.market }}/{{ instrument.board }}</p>
+  <p><b>Лот:</b> {{ instrument.lot_size }}</p>
+  <p>
+    <a class="mm-btn" href="{% url 'mm08:candle_list' instrument.ticker %}">Свечи</a>
+    <a class="mm-btn" href="{% url 'mm08:chart' instrument.ticker %}?interval=60">График</a>
+  </p>
+</div>
+
+<div class="mm-card">
+  <h3>Последние свечи (50)</h3>
+  {% if last_candles %}
+  <table class="mm-table">
+    <thead>
+      <tr><th>DT</th><th>O</th><th>H</th><th>L</th><th>C</th><th>V</th></tr>
+    </thead>
+    <tbody>
+      {% for c in last_candles %}
+      <tr>
+        <td>{{ c.dt|date:"d.m.Y H:i" }}</td>
+        <td>{{ c.open }}</td><td>{{ c.high }}</td><td>{{ c.low }}</td><td>{{ c.close }}</td><td>{{ c.volume }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p>Нет данных по свечам.</p>
+  {% endif %}
+</div>
+{% endblock %}
