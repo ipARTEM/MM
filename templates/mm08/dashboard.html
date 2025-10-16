@@ -6,12 +6,23 @@
   <p>Активных инструментов: <b>{{ total_active }}</b></p>
   <table class="mm-table">
     <thead>
-      <tr><th>Тикер</th><th>Название</th><th>Маркет</th><th>Последняя свеча</th><th>Действия</th></tr>
+      <tr>
+        <th>Тикер</th>
+        <th>Название</th>
+        <th>Маркет</th>
+        <th>Последняя свеча</th>
+        <th>Действия</th>
+      </tr>
     </thead>
     <tbody>
       {% for r in rows %}
       <tr>
-        <td>{{ r.ticker }}</td>
+        <td>
+          <a href="{% url 'mm08:instrument_detail' r.ticker %}" style="text-decoration:none; font-weight:600;">
+            {{ r.ticker }}
+          </a>
+        </td>
+
         <td>{{ r.shortname }}</td>
         <td>{{ r.market }}</td>
         <td>{% if r.last_dt %}{{ r.last_dt|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td>
