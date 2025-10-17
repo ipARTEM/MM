@@ -1,5 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import redirect_to_login
 from django.http import JsonResponse, HttpResponseRedirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
@@ -8,7 +10,7 @@ from django.shortcuts import redirect, render
 from django.db.models import Max
 
 from .models import Instrument, Candle
-from .forms import InstrumentForm, CandleFilterForm
+from .forms import InstrumentForm, CandleFilterForm, InstrumentCreateForm
 
 
 # ---------- MIXINS ----------
@@ -54,18 +56,35 @@ class InstrumentListView(LoginRequiredMixin,ListView):
     context_object_name = "instruments"
     queryset = Instrument.objects.order_by("ticker")
 
-
-class InstrumentCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
-    model = Instrument
-    form_class = InstrumentForm
+class InstrumentCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
     permission_required = "mm08.add_instrument"
     template_name = "mm08/instrument_form.html"
+    form_class = InstrumentCreateForm
     success_url = reverse_lazy("mm08:instrument_list")
 
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        ctx["title"] = "Добавить инструмент"
-        return ctx
+    # чтобы миксин НЕ бросал PermissionDenied
+    raise_exception = False
+
+    def handle_no_permission(self):
+        if not self.request.user.is_authenticated:
+            # гостя отправляем на логин
+            return redirect_to_login(
+                self.request.get_full_path(),
+                self.get_login_url(),
+                self.get_redirect_field_name(),
+            )
+        # залогинен, но прав нет — рендерим наш дружелюбный 403
+        return render(self.request, "mm08/403.html", status=403)
+
+    def get_initial(self):
+        return {"engine": "stock", "market": "shares", "board": "TQBR"}
+
+    def form_valid(self, form):
+        obj = form.save(user=self.request.user)
+        messages.success(self.request, f"Инструмент {obj.ticker} сохранён.")
+        return super().form_valid(form)
+    
+    
 
 
 class CandleFilterView(FormView):
@@ -167,3 +186,4 @@ def custom_permission_denied(request, exception=None):
     response = render(request, "mm08/403.html", status=403)
     response.status_code = 403
     return response
+
