@@ -23,15 +23,10 @@ class MoexISSClient:
         r.raise_for_status()
         return r.json()
 
-    def _build_path(self, engine: Optional[str], market: Optional[str], board: Optional[str]) -> str:
-        """
-        Если заданы engine/market/board — используем узкоспециализированный путь:
-          /iss/engines/{engine}/markets/{market}/boards/{board}/securities.json
-        Иначе — общий /iss/securities.json (но лучше всегда задавать фильтры).
-        """
+    def _build_path(self, engine, market, board) -> str:
         if engine and market and board:
             return f"engines/{engine}/markets/{market}/boards/{board}/securities.json"
-        return "securities.json"
+        return "securities.json" 
 
     def iter_securities(self, engine: Optional[str], market: Optional[str], board: Optional[str]) -> Iterable[Dict]:
         """

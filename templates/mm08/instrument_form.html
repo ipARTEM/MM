@@ -1,14 +1,198 @@
 {% extends "mm08/base.html" %}
-{% block title %}{{ title }}{% endblock %}
+{% block title %}Добавить инструмент{% endblock %}
+
 {% block content %}
 <div class="mm-card">
-  <h2>{{ title }}</h2>
-  <form method="post" novalidate>
+  <h2 style="margin:0 0 12px 0;">Добавить инструмент</h2>
+
+  <form method="post" id="instrumentForm">
     {% csrf_token %}
-    {{ form.non_field_errors }}
-    {{ form.as_p }}
-    <button class="mm-btn" type="submit">Сохранить</button>
-    <a class="mm-btn" style="background:#666" href="{% url 'mm08:instrument_list' %}">Отмена</a>
+
+    <div class="mm-form-grid">
+
+      <!-- Источник (фильтры) -->
+      <div class="mm-field">
+        <label>Engine:</label>
+        {{ form.engine }}
+      </div>
+      <div class="mm-field">
+        <label>Market:</label>
+        {{ form.market }}
+      </div>
+      <div class="mm-field">
+        <label>Board:</label>
+        <input type="text" id="id_board" name="board" readonly class="mm-input" />
+
+      </div>
+
+      <!-- Закрытый выбор из МОЕХ -->
+      <div class="mm-field" style="grid-column:1/-1;">
+        <label>Ticker (SECID):</label>
+        {{ form.ticker }}
+        <div class="mm-hint">Только из списка МОЕХ для выбранного board.</div>
+      </div>
+
+      <!-- Автозаполняемые -->
+      <div class="mm-field">
+        <label>Secid:</label>
+        {{ form.secid }}
+      </div>
+
+      <div class="mm-field">
+        <label>Shortname:</label>
+        {{ form.shortname }}
+      </div>
+
+      <div class="mm-field">
+        <label>Lot size:</label>
+        {{ form.lot_size }}
+      </div>
+
+      <div class="mm-field">
+        <label>Is active:</label>
+        {{ form.is_active }}
+      </div>
+    </div>
+
+    <div style="margin-top:14px; display:flex; gap:10px;">
+      <button class="mm-btn" type="submit">Сохранить</button>
+      <a class="mm-btn ghost" href="{% url 'mm08:instrument_list' %}">Отмена</a>
+    </div>
   </form>
 </div>
+
+<script>
+  async function loadMeta() {
+    // 1) по engine подтягиваем допустимые markets/boards и дефолты
+    const engine = document.getElementById("id_engine").value;
+    const r = await fetch(`/api/moex/meta/?engine=${encodeURIComponent(engine)}`);
+    const j = await r.json();
+
+    const selMarket = document.getElementById("id_market");
+    const selBoard = document.getElementById("id_board");
+
+    // наполняем market
+    selMarket.innerHTML = "";
+    for (const [val, label] of j.markets) {
+      const o = document.createElement("option");
+      o.value = val; o.textContent = label;
+      selMarket.appendChild(o);
+    }
+    selMarket.value = j.defaults.market;
+
+    // наполняем board по дефолтному market
+    selBoard.innerHTML = "";
+    for (const [val, label] of j.boards) {
+      const o = document.createElement("option");
+      o.value = val; o.textContent = label;
+      selBoard.appendChild(o);
+    }
+    selBoard.value = j.defaults.board;
+  }
+
+  async function loadBoardsForCurrentMarket() {
+    // 2) при смене market подгружаем boards для текущего engine/market
+    const engine = document.getElementById("id_engine").value;
+    const market = document.getElementById("id_market").value;
+    const r = await fetch(`/api/moex/meta/?engine=${encodeURIComponent(engine)}`);
+    const j = await r.json();
+
+    const selBoard = document.getElementById("id_board");
+    selBoard.innerHTML = "";
+    const boards = j.markets.find(m => m[0] === market) ? j.boards : j.boards; // упрощенно: у нас по одному набору
+    for (const [val, label] of boards) {
+      const o = document.createElement("option");
+      o.value = val; o.textContent = label;
+      selBoard.appendChild(o);
+    }
+    // если нужного нет — выберется первый
+  }
+
+  async function loadOptions() {
+    // 3) грузим список SECID для текущей тройки
+    const engine = document.getElementById("id_engine").value;
+    const market = document.getElementById("id_market").value;
+    const board = document.getElementById("id_board").value;
+    const sel = document.getElementById("id_ticker");
+
+    sel.innerHTML = "";
+    const o0 = document.createElement("option");
+    o0.value = ""; o0.textContent = "Загрузка…";
+    sel.appendChild(o0); sel.disabled = true;
+
+    const r = await fetch(`/api/moex/options/?engine=${encodeURIComponent(engine)}&market=${encodeURIComponent(market)}&board=${encodeURIComponent(board)}`);
+    const j = await r.json();
+
+    sel.innerHTML = "";
+    for (const [val, label] of (j.options || [])) {
+      const o = document.createElement("option");
+      o.value = val; o.textContent = label;
+      sel.appendChild(o);
+    }
+    sel.disabled = false;
+  }
+
+  async function reloadInfo() {
+    // 4) детали по одному SECID
+    const engine = document.getElementById("id_engine").value;
+    const market = document.getElementById("id_market").value;
+    const board = document.getElementById("id_board").value;
+    const secid = document.getElementById("id_ticker").value;
+    if (!secid) return;
+    const r = await fetch(`/api/moex/instrument-info/?engine=${encodeURIComponent(engine)}&market=${encodeURIComponent(market)}&board=${encodeURIComponent(board)}&secid=${encodeURIComponent(secid)}`);
+    const j = await r.json();
+    if (j.ok) {
+      document.getElementById("id_secid").value = j.data.secid || "";
+      document.getElementById("id_shortname").value = j.data.shortname || "";
+      document.getElementById("id_lot_size").value = j.data.lot_size ?? 1;
+    }
+  }
+
+  // КАСКАД:
+  document.getElementById("id_engine").addEventListener("change", async () => {
+    await loadMeta();     // markets/boards под engine
+    await loadOptions();  // тикеры под новую тройку
+    await reloadInfo();
+  });
+  document.getElementById("id_market").addEventListener("change", async () => {
+    await loadBoardsForCurrentMarket();
+    await loadOptions();
+    await reloadInfo();
+  });
+  document.getElementById("id_board").addEventListener("change", async () => {
+    await loadOptions();
+    await reloadInfo();
+  });
+  document.getElementById("id_ticker").addEventListener("change", reloadInfo);
+  document.getElementById("id_is_active").addEventListener("change", reloadInfo);
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    await loadMeta();     // выставит shares/TQBR для stock, futures/RFUD для futures и т.д.
+    await loadOptions();
+  });
+</script>
+
+
+
+
+<style>
+  /* простая сетка формы */
+  .mm-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    gap: 12px;
+  }
+
+  .mm-field label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .mm-hint {
+    font-size: 12px;
+    color: #667085;
+    margin-top: 4px;
+  }
+</style>
 {% endblock %}

@@ -1,6 +1,8 @@
 from datetime import datetime
+from django.http import JsonResponse
 from django.utils.dateparse import parse_datetime
 from django.shortcuts import get_object_or_404
+from django.views.decorators.http import require_GET
 from rest_framework import viewsets, mixins
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -8,7 +10,8 @@ from rest_framework.pagination import PageNumberPagination
 
 from .models import Instrument, Candle
 from .serializers import InstrumentSerializer, CandleSerializer
-
+from .services.moex_catalog import get_moex_info, get_moex_list
+from .services.moex_meta import get_markets, get_boards, get_engines, get_defaults, is_valid_combo
 
 class DefaultPagination(PageNumberPagination):
     page_size = 100
@@ -81,3 +84,45 @@ class CandleViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         if not obj:
             return Response({"detail": "not found"}, status=404)
         return Response(CandleSerializer(obj).data)
+        
+@require_GET
+def api_moex_instrument_info(request):
+    engine = request.GET.get("engine", "stock")
+    market = request.GET.get("market", "shares")
+    board  = request.GET.get("board",  "TQBR")
+    secid  = request.GET.get("secid",  "")
+
+    if not is_valid_combo(engine, market, board):
+        return JsonResponse({"ok": False, "error": "Invalid engine/market/board"}, status=400)
+
+    data = get_moex_info(engine=engine, market=market, board=board, secid=secid)
+    if not data:
+        return JsonResponse({"ok": False, "error": "Not found"}, status=404)
+    return JsonResponse({"ok": True, "data": data})
+
+@require_GET
+def api_moex_options(request):
+    engine = request.GET.get("engine", "stock")
+    market = request.GET.get("market", "shares")
+    board  = request.GET.get("board",  "TQBR")
+
+    if not is_valid_combo(engine, market, board):
+        return JsonResponse({"ok": True, "options": []})  # пустой список — UI обновит выборами
+
+    options = get_moex_list(engine=engine, market=market, board=board)
+    return JsonResponse({"ok": True, "options": options})
+
+# НОВОЕ: метаданные для каскада (engine -> markets -> boards)
+@require_GET
+def api_moex_meta(request):
+    engine = request.GET.get("engine", "stock")
+    markets = get_markets(engine)
+    default_market, default_board = get_defaults(engine)
+    boards = get_boards(engine, default_market)
+    return JsonResponse({
+        "ok": True,
+        "engines": get_engines(),
+        "markets": markets,
+        "boards": boards,
+        "defaults": {"market": default_market, "board": default_board},
+    })

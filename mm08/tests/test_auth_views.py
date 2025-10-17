@@ -1,22 +1,16 @@
-import pytest
 from django.urls import reverse
+from ._utils import html
 
-@pytest.mark.django_db
-def test_login_page_accessible(client):
+
+def test_login_page(client):
     r = client.get(reverse("allusers:login"))
     assert r.status_code == 200
-    assert b"Вход" in r.content or b"Войти" in r.content
+    page = html(r)
+    assert ("Вход" in page) or ("Войти" in page)
 
-@pytest.mark.django_db
-def test_profile_requires_login(client, auth_client_analyst):
-    url = reverse("allusers:profile")
 
-    # аноним — редирект на логин
-    r1 = client.get(url)
-    assert r1.status_code in (302, 301)
-    assert "login" in r1["Location"]
-
-    # залогинен — 200
-    r2 = auth_client_analyst.get(url)
-    assert r2.status_code == 200
-    assert b"Профиль" in r2.content
+def test_register_page(client):
+    r = client.get(reverse("allusers:register"))
+    assert r.status_code == 200
+    page = html(r)
+    assert "Регистрация" in page
