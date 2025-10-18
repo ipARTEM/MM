@@ -1,0 +1,56 @@
+{% extends "mm08/base.html" %}
+{% block title %}Теплокарты MOEX{% endblock %}
+{% block content %}
+<div class="mm-card">
+    <div class="mm-heatbar">
+        <h2 style="margin:0;">Теплокарты MOEX</h2>
+
+        <form method="get" action="{% url 'mm08:heatmap' %}" class="mm-heat-controls">
+            <select name="board">
+                <option value="TQBR" {% if board == "TQBR" %}selected{% endif %}>Акции (TQBR)</option>
+                <option value="RFUD" {% if board == "RFUD" %}selected{% endif %}>Фьючерсы (RFUD)</option>
+            </select>
+
+            <input type="date" name="date" value="{{ request.GET.date|default:'' }}">
+            <button class="mm-btn" type="submit">Показать на момент</button>
+
+            <a class="mm-btn" href="{% url 'mm08:heatmap' %}?board={{board}}">Снимок из БД (последний)</a>
+            <a class="mm-btn" href="{% url 'mm08:heatmap_export' %}?board={{board}}">Экспорт CSV</a>
+        </form>
+
+        {% if perms.mm08.add_heatsnapshot %}
+
+        <form method="post" action="{% url 'mm08:heatmap_refresh' %}" class="mm-heat-actions">
+            {% csrf_token %}
+            <input type="hidden" name="board" value="{{ board }}">
+            <button class="mm-btn" name="label" value="fast" type="submit">Обновить (fast)</button>
+            <button class="mm-btn" name="label" value="fresh" type="submit">Обновить (fresh)</button>
+        </form>
+        {% endif %}
+    </div>
+
+    <div style="margin-top:10px; color:#4b5563;">
+        {% if snapshot %}
+        Срез: {{ snapshot.board }} — {{ snapshot.label|default:"" }} — {{ snapshot.created_at|date:"d.m.Y H:i" }}
+        {% else %}
+        Срез не найден.
+        {% endif %}
+    </div>
+
+    <div class="heat-grid">
+        {% for t in tiles %}
+        <div class="heat-tile" style="background: {{ t.bg }}">
+            <div class="heat-ticker">{{ t.ticker }}</div>
+            <div class="heat-short">{{ t.shortname|default:"" }}</div>
+            <div class="heat-change">
+                {% if t.change_pct is not None %}
+                {{ t.change_pct|floatformat:2 }}%
+                {% else %}—%{% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <p>Нет данных. Нажмите «Обновить» или выберите другую дату/борд.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

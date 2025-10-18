@@ -1,16 +1,18 @@
+# mm08/views.py
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
-from django.http import JsonResponse, HttpResponseRedirect
+from django.http import JsonResponse, HttpResponseRedirect, HttpResponse
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views import View
-from django.views.generic import TemplateView, ListView, CreateView, FormView, DetailView
+from django.views.generic import TemplateView, ListView, FormView, DetailView
 from django.shortcuts import redirect, render
-from django.db.models import Max
+from django.db.models import Max, Prefetch
 
-from .models import Instrument, Candle
-from .forms import InstrumentForm, CandleFilterForm, InstrumentCreateForm
+from .models import Instrument, Candle, HeatSnapshot, HeatTile
+from .forms import CandleFilterForm, InstrumentCreateForm
 
 
 # ---------- MIXINS ----------
@@ -50,11 +52,12 @@ class HomeView(TemplateView):
         return {"title": "MM08 — старт"}
 
 
-class InstrumentListView(LoginRequiredMixin,ListView):
+class InstrumentListView(LoginRequiredMixin, ListView):
     model = Instrument
     template_name = "mm08/instruments.html"
     context_object_name = "instruments"
     queryset = Instrument.objects.order_by("ticker")
+
 
 class InstrumentCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
     permission_required = "mm08.add_instrument"
@@ -67,13 +70,11 @@ class InstrumentCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView
 
     def handle_no_permission(self):
         if not self.request.user.is_authenticated:
-            # гостя отправляем на логин
             return redirect_to_login(
                 self.request.get_full_path(),
                 self.get_login_url(),
                 self.get_redirect_field_name(),
             )
-        # залогинен, но прав нет — рендерим наш дружелюбный 403
         return render(self.request, "mm08/403.html", status=403)
 
     def get_initial(self):
@@ -83,8 +84,6 @@ class InstrumentCreateView(LoginRequiredMixin, PermissionRequiredMixin, FormView
         obj = form.save(user=self.request.user)
         messages.success(self.request, f"Инструмент {obj.ticker} сохранён.")
         return super().form_valid(form)
-    
-    
 
 
 class CandleFilterView(FormView):
@@ -106,7 +105,7 @@ class CandleListView(LoginRequiredMixin, InstrumentByTickerMixin, ListView):
     model = Candle
     template_name = "mm08/candles.html"
     context_object_name = "candles"
-    paginate_by = None  # если понадобится пагинация — поставь число
+    paginate_by = None
 
     def get_queryset(self):
         qs = Candle.objects.filter(instrument=self.instrument)
@@ -132,7 +131,7 @@ class ChartView(LoginRequiredMixin, InstrumentByTickerMixin, TemplateView):
 
 
 class ChartDataView(InstrumentByTickerMixin, View):
-    """JSON для графика (как было, только CBV)."""
+    """JSON для графика."""
     def get(self, request, *args, **kwargs):
         interval = int(request.GET.get("interval", 60))
         qs = (Candle.objects
@@ -161,14 +160,12 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         return {"title": "Дашборд", "total_active": instruments.count(), "rows": rows}
 
 
-# ---------- НОВАЯ СТРАНИЦА: карточка инструмента ----------
 class InstrumentDetailView(InstrumentByTickerMixin, DetailView):
     """Карточка инструмента + последние 50 свечей."""
     model = Instrument
     template_name = "mm08/instrument_detail.html"
     context_object_name = "instrument"
 
-    # DetailView по умолчанию ждёт pk/slug; используем миксин:
     def get_object(self, queryset=None):
         return self.instrument
 
@@ -187,3 +184,158 @@ def custom_permission_denied(request, exception=None):
     response.status_code = 403
     return response
 
+
+# ---------- HEATMAP ----------
+def _color_by_change(pct, *, neutral_when_abs_lt: float = 0.01) -> str:
+    """
+    Цвет плитки по % изменения.
+    - None и |pct| < neutral_when_abs_lt -> нейтральный серый.
+    - < 0 -> красный (темнее при большем модуле).
+    - > 0 -> зелёный (темнее при большем модуле).
+    """
+    try:
+        if pct is None:
+            return "#374151"  # нейтральный, нет данных
+        v = float(pct)
+    except (TypeError, ValueError):
+        return "#374151"
+
+    if abs(v) < neutral_when_abs_lt:
+        return "#374151"
+
+    # ограничим диапазон для визуала
+    v = max(min(v, 10.0), -10.0)
+    strength = abs(v) / 10.0  # 0..1
+
+    hue = 120 if v > 0 else 0
+    sat = int(30 + 70 * strength)      # 30..100
+    light = int(52 - 20 * strength)    # 52..32 (чем сильнее – тем темнее)
+
+    return f"hsl({hue}, {sat}%, {light}%)"
+
+
+class HeatmapView(TemplateView):
+    template_name = "mm08/heatmaps.html"
+
+    def get_snapshot(self):
+        pk = self.kwargs.get("pk")
+        board = self.request.GET.get("board") or "TQBR"
+        date_s = self.request.GET.get("date")
+        label = self.request.GET.get("label") or ""  # fast/fresh/…
+
+        qs = HeatSnapshot.objects.filter(board=board).order_by("-created_at")
+        if pk:
+            return qs.select_related().prefetch_related("tiles").get(pk=pk)
+
+        if date_s:
+            try:
+                dt = timezone.datetime.fromisoformat(date_s)
+                qs = qs.filter(created_at__date=dt.date())
+            except Exception:
+                pass
+        if label:
+            qs = qs.filter(label=label)
+
+        return qs.select_related().prefetch_related(
+            Prefetch("tiles", queryset=HeatTile.objects.order_by("-change_pct"))
+        ).first()
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        board = self.request.GET.get("board") or "TQBR"
+        snap = self.get_snapshot()
+        tiles = snap.tiles.all() if snap else []
+
+        grid = []
+        for t in tiles:
+            # фон с учётом None / 0.00
+            bg = _color_by_change(t.change_pct)
+            # признак роста только при > 0
+            is_up = False
+            try:
+                is_up = (t.change_pct is not None) and (float(t.change_pct) > 0)
+            except (TypeError, ValueError):
+                is_up = False
+
+            grid.append({
+                "ticker": t.ticker,
+                "shortname": t.shortname,
+                "change_pct": t.change_pct,
+                "last": t.last,
+                "turnover": t.turnover,
+                "bg": bg,
+                "is_up": is_up,
+            })
+
+        last_dates = (HeatSnapshot.objects.filter(board=board)
+                      .order_by("-created_at")
+                      .values_list("created_at", flat=True)[:20])
+
+        ctx.update({
+            "title": "Теплокарты MOEX",
+            "board": board,
+            "snapshot": snap,
+            "tiles": grid,
+            "dates": [d.date() for d in last_dates],
+        })
+        return ctx
+
+
+class HeatmapRefreshView(PermissionRequiredMixin, View):
+    """Обновить теплокарту с MOEX и редирект на страницу."""
+    permission_required = "mm08.add_heatsnapshot"
+
+    def post(self, request, *args, **kwargs):
+        from .management.commands.load_heatmap import fetch_board
+        board = request.POST.get("board", "TQBR")
+        label = request.POST.get("label", "fast")
+        rows = fetch_board(board=board)
+        if not rows:
+            messages.error(request, "Не удалось получить данные с MOEX.")
+            return redirect("mm08:heatmap")
+
+        snap = HeatSnapshot.objects.create(board=board, label=label)
+        HeatTile.objects.bulk_create([
+            HeatTile(
+                snapshot=snap,
+                ticker=r["ticker"],
+                shortname=r["shortname"],
+                last=r["last"] or 0,
+                change_pct=r["change_pct"],        # может быть None — это ок
+                turnover=r["turnover"] or 0,
+                volume=r["volume"] or 0,
+                lot_size=r["lot_size"] or 1,
+            )
+            for r in rows
+        ])
+        messages.success(request, f"Обновлено: {board} ({label}), {len(rows)} тикеров.")
+        return redirect("mm08:heatmap")
+
+    def get(self, request, *args, **kwargs):
+        return self.post(request, *args, **kwargs)
+
+
+class HeatmapExportView(View):
+    """Экспорт текущего среза в CSV."""
+    def get(self, request, *args, **kwargs):
+        board = request.GET.get("board") or "TQBR"
+        snap = (HeatSnapshot.objects
+                .filter(board=board)
+                .order_by("-created_at")
+                .prefetch_related("tiles")
+                .first())
+        if not snap:
+            return HttpResponse("no data", content_type="text/plain", status=404)
+
+        import csv, io
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["ticker", "shortname", "last", "change_pct", "turnover", "volume"])
+        for t in snap.tiles.order_by("-change_pct"):
+            w.writerow([t.ticker, t.shortname, t.last, t.change_pct, t.turnover, t.volume])
+
+        resp = HttpResponse(buf.get_value(), content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = (
+            f'attachment; filename="heatmap_{board}_{snap.created_at:%Y%m%d_%H%M}.csv"'
+        )
+        return resp

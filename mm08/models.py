@@ -82,3 +82,67 @@ class Candle(TimeStampedModel):       # ← наследуемся
 
     def __str__(self) -> str:
         return f"{self.instrument.ticker} {self.dt} [{self.get_interval_display()}]"
+    
+
+# --- HEATMAP (теплокарта) ------------------------------------------------------
+from decimal import Decimal
+from django.core.validators import MinValueValidator, MaxValueValidator
+
+class HeatSnapshot(TimeStampedModel):
+    """Снапшот теплокарты на определённую дату/момент."""
+    date = models.DateField(db_index=True)
+    board = models.CharField(max_length=16, default="TQBR", db_index=True)
+    label = models.CharField(max_length=32, blank=True, default="")  # например: fast / fresh / close
+    source = models.CharField(max_length=32, default="moex")
+
+    class Meta:
+        verbose_name = "Снимок теплокарты"
+        verbose_name_plural = "Снимки теплокарты"
+        ordering = ["-date", "-created_at"]
+        unique_together = (("date", "board", "label"),)
+
+    def __str__(self):
+        return f"{self.date} {self.board} {self.label}".strip()
+
+
+class HeatTile(models.Model):
+    """Плитка теплокарты (одна бумага)."""
+    snapshot = models.ForeignKey(HeatSnapshot, on_delete=models.CASCADE, related_name="tiles")
+    ticker = models.CharField(max_length=20, db_index=True)
+    shortname = models.CharField(max_length=100, blank=True, default="")
+    engine = models.CharField(max_length=20, default="stock")
+    market = models.CharField(max_length=20, default="shares")
+    board  = models.CharField(max_length=20, default="TQBR")
+
+    last = models.DecimalField(max_digits=20, decimal_places=6, default=Decimal("0"))
+    change_pct = models.DecimalField(
+        max_digits=8,
+        decimal_places=3,
+        null=True,           # ← добавили
+        blank=True,          # ← добавили
+        default=None,        # ← изменили (было Decimal("0"))
+        help_text="Изменение % относительно предыдущего закрытия (LASTCHANGEPRC)",
+    )
+    turnover = models.BigIntegerField(default=0)  # оборот, если будет
+    volume   = models.BigIntegerField(default=0)  # кол-во, если будет
+    lot_size = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        verbose_name = "Плитка теплокарты"
+        verbose_name_plural = "Плитки теплокарты"
+        indexes = [
+            models.Index(fields=["snapshot", "ticker"]),
+            models.Index(fields=["snapshot", "change_pct"]),
+        ]
+        ordering = ["-change_pct"]
+
+    def __str__(self):
+        return f"{self.ticker} {self.change_pct}%"
+
+    # Бин для цвета (-5..+5)
+    @property
+    def color_bin(self) -> int:
+        # если процента нет — считаем нейтральным (0)
+        v = float(self.change_pct) if self.change_pct is not None else 0.0
+        v = max(min(v, 10.0), -10.0)
+        return int(round(v / 2.0))

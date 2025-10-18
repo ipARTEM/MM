@@ -373,7 +373,7 @@ header nav a:focus-visible {
 .mm-menubar {
     display: flex;
     /* justify-content:flex-end; меню справа */
-    padding-bottom: 6px 6px 0 0;
+    padding: 0 0 6px 0;
     border-radius: 12px 12px 0 0;
 }
 
@@ -406,4 +406,97 @@ header nav a:focus-visible {
     .mm-menu.open {
         display: flex;
     }
+}
+
+/* Heatmaps */
+.mm-heatbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    justify-content: space-between;
+}
+
+.mm-heat-controls,
+.mm-heat-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+/* Сетка: по умолчанию 2 колонки, дальше нарастим медиазапросами */
+.heat-grid {
+    margin-top: 16px;
+    display: grid;
+    width: 100%;
+    grid-auto-flow: row dense;
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+    gap: 10px;
+    min-width: 0;
+    /* не даём детям раздувать колонку */
+}
+
+/* Брейкпоинты — заставим быть многоколоночной на десктопе */
+@media (min-width: 640px) {
+    .heat-grid {
+        grid-template-columns: repeat(3, minmax(160px, 1fr));
+    }
+}
+
+@media (min-width: 820px) {
+    .heat-grid {
+        grid-template-columns: repeat(4, minmax(160px, 1fr));
+    }
+}
+
+@media (min-width: 980px) {
+    .heat-grid {
+        grid-template-columns: repeat(5, minmax(160px, 1fr));
+    }
+}
+
+@media (min-width: 1140px) {
+    .heat-grid {
+        grid-template-columns: repeat(6, minmax(160px, 1fr));
+    }
+}
+
+.heat-tile {
+    border-radius: 14px;
+    padding: 12px;
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(10, 20, 40, .15);
+    min-height: 94px;
+    /* компактная высота */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-width: 0;
+    /* на всякий случай против раздувания */
+}
+
+.heat-ticker {
+    font-weight: 700;
+    letter-spacing: .4px;
+}
+
+.heat-short {
+    font-size: 12px;
+    opacity: .9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.heat-change {
+    font-weight: 700;
+    font-size: 14px;
+    text-align: right;
+}
+
+/* строка с метаданными */
+.mm-heat-meta {
+    margin-top: 10px;
+    color: #4b5563;
 }
