@@ -40,6 +40,9 @@
             <nav class="mm-menu" id="mainMenu">
                 {% with request.resolver_match.url_name as cur %}
                 <a class="mm-link {% if cur == 'home' %}active{% endif %}" href="{% url 'mm08:home' %}">Главная</a>
+                <a class="mm-link {% if cur == 'heatmap' %}active{% endif %}" href="{% url 'mm08:heatmap' %}">Теплокарты</a>
+
+                
                 <a class="mm-link {% if cur == 'instrument_list' %}active{% endif %}"
                     href="{% url 'mm08:instrument_list' %}">Инструменты</a>
                 <a class="mm-link {% if cur == 'candle_filter' %}active{% endif %}"

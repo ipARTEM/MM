@@ -23,8 +23,15 @@ urlpatterns = [
     # Графики
     path("chart/<str:ticker>/", views.ChartView.as_view(), name="chart"),
     path("chart/<str:ticker>/data/", views.ChartDataView.as_view(), name="chart_data"),
-
+    
+    # Дашборд
     path("dashboard/", views.DashboardView.as_view(), name="dashboard"),
+
+    # Теплокарты
+    path("heatmaps/", views.HeatmapView.as_view(), name="heatmap"),
+    path("heatmaps/snapshot/<int:pk>/", views.HeatmapView.as_view(), name="heatmap_by_pk"),
+    path("heatmaps/refresh/", views.HeatmapRefreshView.as_view(), name="heatmap_refresh"),
+    path("heatmaps/export.csv", views.HeatmapExportView.as_view(), name="heatmap_export"),
 
 
     path("moex/instrument-info/", api_views.api_moex_instrument_info, name="moex_instrument_info"),
