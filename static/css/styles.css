@@ -500,3 +500,33 @@ header nav a:focus-visible {
     margin-top: 10px;
     color: #4b5563;
 }
+
+
+/* Пагинация */
+.mm-pager-wrap{
+  display:flex; justify-content:center; align-items:center;
+  gap:6px; margin-top:16px;
+}
+.mm-page{
+  display:inline-block; min-width:36px; text-align:center;
+  padding:8px 10px; border-radius:10px; border:1px solid var(--border);
+  background:#fff; color:#0a3770; text-decoration:none; font-weight:600;
+  box-shadow: var(--shadow);
+}
+.mm-page:hover{ background:#f3f6ff; }
+.mm-page.current{
+  background: var(--brand); color:#fff; border-color:transparent;
+}
+.mm-page.disabled{
+  opacity:.5; pointer-events:none;
+}
+
+/* Аккордеон "Показать по: N / стр" */
+.mm-acc{ position:relative; }
+.mm-acc summary{ list-style:none; cursor:pointer; }
+.mm-acc summary::-webkit-details-marker{ display:none; }
+.mm-acc-panel{
+  position:absolute; z-index:5; margin-top:8px; padding:8px;
+  background:#fff; border:1px solid var(--border); border-radius:12px;
+  box-shadow: var(--shadow);
+}

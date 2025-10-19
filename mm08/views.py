@@ -1,8 +1,8 @@
 # mm08/views.py
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
-from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
+from django.core.paginator import Paginator, EmptyPage
 from django.http import JsonResponse, HttpResponseRedirect, HttpResponse
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -39,7 +39,8 @@ class InstrumentByTickerMixin:
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
-        ctx = getattr(super(), "get_context_data", lambda **kw: {})(**kwargs)
+        # Миксин только кладёт объект инструмента в контекст
+        ctx = super().get_context_data(**kwargs)
         ctx[self.instrument_context_name] = self.instrument
         return ctx
 
@@ -105,7 +106,7 @@ class CandleListView(LoginRequiredMixin, InstrumentByTickerMixin, ListView):
     model = Candle
     template_name = "mm08/candles.html"
     context_object_name = "candles"
-    paginate_by = None
+    paginate_by = None  # при необходимости можно включить пагинацию
 
     def get_queryset(self):
         qs = Candle.objects.filter(instrument=self.instrument)
@@ -214,6 +215,21 @@ def _color_by_change(pct, *, neutral_when_abs_lt: float = 0.01) -> str:
     return f"hsl({hue}, {sat}%, {light}%)"
 
 
+def window_numbers(page_obj, window=5):
+    """Вернуть список номеров страниц длиной ≤ window, центрируя текущую."""
+    total = page_obj.paginator.num_pages
+    cur = page_obj.number
+    if total <= window:
+        return list(range(1, total + 1))
+    half = window // 2
+    start = max(1, cur - half)
+    end = start + window - 1
+    if end > total:
+        end = total
+        start = max(1, end - window + 1)
+    return list(range(start, end + 1))
+
+
 class HeatmapView(TemplateView):
     template_name = "mm08/heatmaps.html"
 
@@ -243,31 +259,49 @@ class HeatmapView(TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         board = self.request.GET.get("board") or "TQBR"
-        snap = self.get_snapshot()
-        tiles = snap.tiles.all() if snap else []
 
-        grid = []
-        for t in tiles:
-            # фон с учётом None / 0.00
-            bg = _color_by_change(t.change_pct)
-            # признак роста только при > 0
-            is_up = False
+        # размер страницы
+        per_choices = [5, 10, 20, 50]
+        try:
+            per = int((self.request.GET.get("per") or "20").strip())
+        except ValueError:
+            per = 20
+        if per not in per_choices:
+            per = 20
+
+        snap = self.get_snapshot()
+        tiles_qs = snap.tiles.order_by("-change_pct") if snap else HeatTile.objects.none()
+
+        # подготовка карточек
+        prepped = []
+        for t in tiles_qs:
             try:
                 is_up = (t.change_pct is not None) and (float(t.change_pct) > 0)
             except (TypeError, ValueError):
                 is_up = False
-
-            grid.append({
+            prepped.append({
                 "ticker": t.ticker,
                 "shortname": t.shortname,
                 "change_pct": t.change_pct,
                 "last": t.last,
                 "turnover": t.turnover,
-                "bg": bg,
+                "bg": _color_by_change(t.change_pct),
                 "is_up": is_up,
             })
 
-        last_dates = (HeatSnapshot.objects.filter(board=board)
+        # пагинация
+        paginator = Paginator(prepped, per)
+        page_num = self.request.GET.get("page", "1")
+        try:
+            page = paginator.page(page_num)
+        except EmptyPage:
+            page = paginator.page(paginator.num_pages)
+        except Exception:
+            page = paginator.page(1)
+
+        # для выпадающего списка дат
+        last_dates = (HeatSnapshot.objects
+                      .filter(board=board)
                       .order_by("-created_at")
                       .values_list("created_at", flat=True)[:20])
 
@@ -275,7 +309,12 @@ class HeatmapView(TemplateView):
             "title": "Теплокарты MOEX",
             "board": board,
             "snapshot": snap,
-            "tiles": grid,
+            "tiles": page.object_list,
+            "page_obj": page,
+            "paginator": paginator,
+            "page_numbers": window_numbers(page, 5),
+            "per": per,
+            "per_choices": per_choices,
             "dates": [d.date() for d in last_dates],
         })
         return ctx
@@ -334,7 +373,7 @@ class HeatmapExportView(View):
         for t in snap.tiles.order_by("-change_pct"):
             w.writerow([t.ticker, t.shortname, t.last, t.change_pct, t.turnover, t.volume])
 
-        resp = HttpResponse(buf.get_value(), content_type="text/csv; charset=utf-8")
+        resp = HttpResponse(buf.getvalue(), content_type="text/csv; charset=utf-8")
         resp["Content-Disposition"] = (
             f'attachment; filename="heatmap_{board}_{snap.created_at:%Y%m%d_%H%M}.csv"'
         )
