@@ -7,8 +7,8 @@
 
         <form method="get" action="{% url 'mm08:heatmap' %}" class="mm-heat-controls">
             <select name="board">
-                <option value="TQBR" {% if board == "TQBR" %}selected{% endif %}>Акции (TQBR)</option>
-                <option value="RFUD" {% if board == "RFUD" %}selected{% endif %}>Фьючерсы (RFUD)</option>
+                <option value="TQBR" {% if board=="TQBR" %}selected{% endif %}>Акции (TQBR)</option>
+                <option value="RFUD" {% if board=="RFUD" %}selected{% endif %}>Фьючерсы (RFUD)</option>
             </select>
 
             <input type="date" name="date" value="{{ request.GET.date|default:'' }}">
@@ -30,7 +30,9 @@
 
     <div style="margin-top:10px; color:#4b5563;">
         {% if snapshot %}
-        Срез: {{ snapshot.board }} — {{ snapshot.label|default:"" }} — {{ snapshot.created_at|date:"d.m.Y H:i" }}
+        Срез: {{ snapshot.board }}
+        — {{ snapshot.label|default:"" }}
+        — {{ snapshot.date|date:"d.m.Y" }} {{ snapshot.created_at|time:"H:i" }}
         {% else %}
         Срез не найден.
         {% endif %}
@@ -41,12 +43,18 @@
         <div class="heat-tile" style="background: {{ t.bg }}">
             <div class="heat-ticker">{{ t.ticker }}</div>
             <div class="heat-short">{{ t.shortname|default:"" }}</div>
+
+            <div class="heat-last">
+                {% if t.last %}{{ t.last|floatformat:2 }}{% else %}—{% endif %}
+            </div>
+
             <div class="heat-change">
                 {% if t.change_pct is not None %}
-                    {{ t.change_pct|floatformat:2 }}%
+                {{ t.change_pct|floatformat:2 }}%
                 {% else %}—%{% endif %}
             </div>
         </div>
+
         {% empty %}
         <p>Нет данных. Нажмите «Обновить» или выберите другую дату/борд.</p>
         {% endfor %}
@@ -57,11 +65,10 @@
         <summary class="mm-btn ghost">Показать по: {{ per }} / стр</summary>
         <div class="mm-acc-panel">
             {% for n in per_choices %}
-              <a class="mm-btn ghost"
-                 href="?board={{ board }}&per={{ n }}"
-                 style="margin-right:6px; margin-top:6px;{% if n == per %} pointer-events:none; opacity:.65;{% endif %}">
-                 {{ n }}
-              </a>
+            <a class="mm-btn ghost" href="?board={{ board }}&per={{ n }}"
+                style="margin-right:6px; margin-top:6px;{% if n == per %} pointer-events:none; opacity:.65;{% endif %}">
+                {{ n }}
+            </a>
             {% endfor %}
         </div>
     </details>
@@ -71,39 +78,39 @@
 
         {# First #}
         {% if page_obj.has_previous %}
-            <a class="mm-page" href="?board={{ board }}&per={{ per }}&page=1">First</a>
+        <a class="mm-page" href="?board={{ board }}&per={{ per }}&page=1">First</a>
         {% else %}
-            <span class="mm-page disabled">First</span>
+        <span class="mm-page disabled">First</span>
         {% endif %}
 
         {# Prev #}
         {% if page_obj.has_previous %}
-            <a class="mm-page" href="?board={{ board }}&per={{ per }}&page={{ page_obj.previous_page_number }}">‹</a>
+        <a class="mm-page" href="?board={{ board }}&per={{ per }}&page={{ page_obj.previous_page_number }}">‹</a>
         {% else %}
-            <span class="mm-page disabled">‹</span>
+        <span class="mm-page disabled">‹</span>
         {% endif %}
 
         {# 5 числовых кнопок (скользящее окно) #}
         {% for n in page_numbers %}
-            {% if n == page_obj.number %}
-                <span class="mm-page current">{{ n }}</span>
-            {% else %}
-                <a class="mm-page" href="?board={{ board }}&per={{ per }}&page={{ n }}">{{ n }}</a>
-            {% endif %}
+        {% if n == page_obj.number %}
+        <span class="mm-page current">{{ n }}</span>
+        {% else %}
+        <a class="mm-page" href="?board={{ board }}&per={{ per }}&page={{ n }}">{{ n }}</a>
+        {% endif %}
         {% endfor %}
 
         {# Next #}
         {% if page_obj.has_next %}
-            <a class="mm-page" href="?board={{ board }}&per={{ per }}&page={{ page_obj.next_page_number }}">›</a>
+        <a class="mm-page" href="?board={{ board }}&per={{ per }}&page={{ page_obj.next_page_number }}">›</a>
         {% else %}
-            <span class="mm-page disabled">›</span>
+        <span class="mm-page disabled">›</span>
         {% endif %}
 
         {# Last #}
         {% if page_obj.has_next %}
-            <a class="mm-page" href="?board={{ board }}&per={{ per }}&page={{ paginator.num_pages }}">Last</a>
+        <a class="mm-page" href="?board={{ board }}&per={{ per }}&page={{ paginator.num_pages }}">Last</a>
         {% else %}
-            <span class="mm-page disabled">Last</span>
+        <span class="mm-page disabled">Last</span>
         {% endif %}
 
     </div>

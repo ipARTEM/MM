@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal, InvalidOperation
+from typing import List, Dict, Tuple, Optional
 
 import requests
 from django.core.management.base import BaseCommand, CommandError
@@ -11,24 +12,21 @@ from django.db import transaction
 from mm08.models import HeatSnapshot, HeatTile
 
 
-# ---- Конфиг путей ISS по борду -------------------------------------------------
+# ---------- helpers -------------------------------------------------------------
 
 def resolve_path(board: str) -> tuple[str, str, str]:
     """
     Вернёт (engine, market, url_template) для указанного board.
-    По умолчанию считаем, что это акции (stock/shares).
+    RF** -> срочный рынок (FORTS), иначе считаем акции T+.
     """
-    b = board.upper()
-
-    # Фьючерсы (FORTS)
-    if b.startswith("RF"):
+    b = (board or "").upper()
+    if b.startswith("RF"):  # фьючерсы
         return (
             "futures",
             "forts",
             "https://iss.moex.com/iss/engines/futures/markets/forts/boards/{board}/securities.json",
         )
-
-    # Акции (T+)
+    # акции
     return (
         "stock",
         "shares",
@@ -36,58 +34,46 @@ def resolve_path(board: str) -> tuple[str, str, str]:
     )
 
 
-# ---- Вспомогательные функции ----------------------------------------------------
-
-def _to_decimal(x):
-    if x in (None, "", "-"):
+def _to_dec(x: object) -> Optional[Decimal]:
+    if x in (None, "", "-", "NaN"):
         return None
     try:
         return Decimal(str(x))
-    except InvalidOperation:
+    except (InvalidOperation, ValueError, TypeError):
         return None
 
 
-def _rows_from_table(tbl) -> list[dict]:
+def _rows_from_table(tbl) -> List[Dict]:
     """
     Унифицируем таблицу ISS в список словарей.
-    Поддерживает:
       - {"columns":[...], "data":[[...], ...]}
       - [{"SECID": "...", ...}, ...]
     """
     if not tbl:
         return []
 
-    # Уже список словарей
     if isinstance(tbl, list):
         if tbl and isinstance(tbl[0], dict):
             return tbl
         return []
 
-    # Классическая форма
     cols = tbl.get("columns") or []
     data = tbl.get("data") or []
-    out = []
+    out: List[Dict] = []
     for row in data:
-        d = {}
-        for i, col in enumerate(cols):
-            if i < len(row):
-                d[col] = row[i]
-        out.append(d)
+        out.append({cols[i]: row[i] for i in range(min(len(cols), len(row)))})
     return out
 
 
-def fetch_board(board: str) -> tuple[str, str, list[dict]]:
+def fetch_board(board: str) -> Tuple[str, str, List[Dict]]:
     """
     Возвращает (engine, market, rows) для выбранного board.
     rows = [{ticker, shortname, lot_size, last, change_pct, turnover, volume}, ...]
     """
-    engine, market, URL = resolve_path(board)
+    engine, market, url = resolve_path(board)
 
-    # Берём побольше полей — они есть и у акций, и у фьючерсов
     SEC_COLS = "SECID,SHORTNAME,LOTSIZE"
-    MD_COLS = (
-        "SECID,LAST,OPEN,PREVPRICE,CHANGE,LASTCHANGEPRC,VALTODAY,VOLTODAY,NUMTRADES"
-    )
+    MD_COLS = "SECID,LAST,OPEN,PREVPRICE,CHANGE,LASTCHANGEPRC,VALTODAY,VOLTODAY,NUMTRADES"
 
     params = {
         "iss.only": "securities,marketdata",
@@ -97,71 +83,64 @@ def fetch_board(board: str) -> tuple[str, str, list[dict]]:
         "marketdata.columns": MD_COLS,
     }
 
-    r = requests.get(URL.format(board=board), params=params, timeout=20)
+    r = requests.get(url.format(board=board), params=params, timeout=20)
     r.raise_for_status()
     raw = r.json()
 
-    # Найдём нужные таблицы вне зависимости от формы
-    securities_tbl = None
-    marketdata_tbl = None
-    if isinstance(raw, dict):
-        securities_tbl = raw.get("securities")
-        marketdata_tbl = raw.get("marketdata")
-    elif isinstance(raw, list):
-        for part in raw:
-            if isinstance(part, dict):
-                securities_tbl = part.get("securities", securities_tbl)
-                marketdata_tbl = part.get("marketdata", marketdata_tbl)
+    # достаём таблицы вне зависимости от упаковки
+    securities_tbl = raw.get("securities") if isinstance(raw, dict) else None
+    marketdata_tbl = raw.get("marketdata") if isinstance(raw, dict) else None
+    if securities_tbl is None or marketdata_tbl is None:
+        if isinstance(raw, list):
+            for part in raw:
+                if isinstance(part, dict):
+                    securities_tbl = securities_tbl or part.get("securities")
+                    marketdata_tbl = marketdata_tbl or part.get("marketdata")
 
     sec_rows = _rows_from_table(securities_tbl)
     md_rows = _rows_from_table(marketdata_tbl)
+    md_by_secid = {m.get("SECID"): m for m in md_rows if isinstance(m, dict) and m.get("SECID")}
 
-    md_by_secid = {
-        row.get("SECID"): row for row in md_rows if isinstance(row, dict) and row.get("SECID")
-    }
-
-    rows = []
+    rows: List[Dict] = []
     for s in sec_rows:
-        secid = s.get("SECID")
+        secid = (s.get("SECID") or "").strip().upper()
         if not secid:
             continue
-        m = md_by_secid.get(secid) or {}
+        m = md_by_secid.get(secid, {})
 
-        last = _to_decimal(m.get("LAST"))
-        prev = _to_decimal(m.get("PREVPRICE"))
-        chg = _to_decimal(m.get("CHANGE"))
-        ready_pct = _to_decimal(m.get("LASTCHANGEPRC"))
+        last = _to_dec(m.get("LAST"))
+        prev = _to_dec(m.get("PREVPRICE"))
+        chg = _to_dec(m.get("CHANGE"))
+        ready_pct = _to_dec(m.get("LASTCHANGEPRC"))
 
-        # Правильный %: сначала пробуем готовый от МОЕХ
-        change_pct = ready_pct
+        # % изменения: сначала пробуем готовое поле от МОЕХ,
+        # иначе считаем сами из CHANGE/PREVPRICE или LAST/PREVPRICE.
+        change_pct: Optional[Decimal] = ready_pct
         if change_pct is None:
-            # Пытаемся посчитать из CHANGE/PREVPRICE
             if chg is not None and prev not in (None, Decimal("0")):
                 change_pct = (chg / prev) * Decimal("100")
-            # Или из LAST/PREVPRICE
             elif last is not None and prev not in (None, Decimal("0")):
                 change_pct = ((last - prev) / prev) * Decimal("100")
 
-        # Оборот/объём — что найдём
-        turnover = m.get("VALTODAY") or m.get("VOLTODAY") or 0
-        volume = m.get("NUMTRADES") or 0
+        turnover = _to_dec(m.get("VALTODAY")) or _to_dec(m.get("VOLTODAY")) or Decimal(0)
+        volume = _to_dec(m.get("NUMTRADES")) or Decimal(0)
 
         rows.append(
             {
                 "ticker": secid,
-                "shortname": s.get("SHORTNAME") or "",
-                "lot_size": int(s.get("LOTSIZE") or 1),
-                "last": float(last) if last is not None else 0.0,
-                "change_pct": float(change_pct) if change_pct is not None else None,
-                "turnover": int(turnover or 0),
-                "volume": int(volume or 0),
+                "shortname": (s.get("SHORTNAME") or "").strip(),
+                "lot_size": int(_to_dec(s.get("LOTSIZE")) or 1),
+                "last": last,                              # Decimal | None
+                "change_pct": change_pct,                  # Decimal | None
+                "turnover": int(turnover),
+                "volume": int(volume),
             }
         )
 
     return engine, market, rows
 
 
-# ---- Команда --------------------------------------------------------------------
+# ---------- command -------------------------------------------------------------
 
 class Command(BaseCommand):
     help = "Загрузить теплокарту MOEX. Пример: load_heatmap --board TQBR --label fast"
@@ -175,39 +154,44 @@ class Command(BaseCommand):
     def handle(self, *args, **opt):
         board = (opt.get("board") or "TQBR").upper()
         label = (opt.get("label") or "fast").strip()
-        date_str = opt.get("date")
-
-        if date_str:
+        d: dt.date
+        if opt.get("date"):
             try:
-                d = dt.datetime.strptime(date_str, "%Y-%m-%d").date()
+                d = dt.datetime.strptime(opt["date"], "%Y-%m-%d").date()
             except ValueError:
                 raise CommandError("date должен быть в формате YYYY-MM-DD")
         else:
             d = dt.date.today()
 
-        self.stdout.write(f"Загружаю MOEX heatmap: board={board}, date={d}, label={label}")
+        self.stdout.write(f"→ Загружаю heatmap board={board}, date={d}, label={label}")
 
         engine, market, rows = fetch_board(board)
         if not rows:
-            raise CommandError("MOEX вернул пустые данные.")
+            raise CommandError("MOEX вернул пустые данные")
 
         snap, _ = HeatSnapshot.objects.get_or_create(
             date=d, board=board, label=label, defaults={"source": "moex"}
         )
-        # Перезапишем плитки
+        # перезаписываем содержимое среза
         snap.tiles.all().delete()
 
-        tiles.append(HeatTile(
-            snapshot=snap,
-            ticker=r["ticker"],
-            shortname=r["shortname"],
-            engine="stock", market="shares", board=board,
-            last=_to_decimal(r["last"]) or Decimal("0"),
-            change_pct=_to_decimal(r["change_pct"]),  # ← допускаем None
-            turnover=int(r["turnover"] or 0),
-            volume=int(r["volume"] or 0),
-            lot_size=int(r["lot_size"] or 1),
-        ))
-        HeatTile.objects.bulk_create(tiles, batch_size=1000)
+        tiles: List[HeatTile] = []
+        for r in rows:
+            tiles.append(
+                HeatTile(
+                    snapshot=snap,
+                    ticker=r["ticker"],
+                    shortname=r["shortname"],
+                    engine=engine,              # убери, если этих полей нет в модели
+                    market=market,              # убери, если этих полей нет в модели
+                    board=board,                # убери, если этих полей нет в модели
+                    last=(r["last"] or Decimal("0")),
+                    change_pct=r["change_pct"],  # допускаем None
+                    turnover=r["turnover"],
+                    volume=r["volume"],
+                    lot_size=r["lot_size"],
+                )
+            )
 
+        HeatTile.objects.bulk_create(tiles, batch_size=1000)
         self.stdout.write(self.style.SUCCESS(f"OK: {snap} — сохранено {len(tiles)} тикеров."))
