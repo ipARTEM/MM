@@ -530,3 +530,7 @@ header nav a:focus-visible {
   background:#fff; border:1px solid var(--border); border-radius:12px;
   box-shadow: var(--shadow);
 }
+
+
+.heat-last { font-weight: 600; opacity: .95; }
+.heat-change { margin-top: 4px; }
