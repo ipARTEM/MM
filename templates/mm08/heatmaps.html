@@ -9,9 +9,9 @@
     {# Форма показа на момент даты (GET) #}
     <form method="get" action="{% url 'mm08:heatmap' %}" class="mm-heat-controls">
       <select name="board">
-        <option value="TQBR" {% if board == "TQBR" %}selected{% endif %}>Акции (TQBR)</option>
-        <option value="RFUD" {% if board == "RFUD" %}selected{% endif %}>Фьючерсы (RFUD)</option>
-      </select>
+          <option value="RFUD" {% if board == "RFUD" %}selected{% endif %}>Фьючерсы (RFUD)</option>
+          <option value="TQBR" {% if board == "TQBR" %}selected{% endif %}>Акции (TQBR)</option>
+        </select>
 
       <input type="date" name="date" value="{{ request.GET.date|default:'' }}">
       <button class="mm-btn" type="submit">Показать на момент</button>

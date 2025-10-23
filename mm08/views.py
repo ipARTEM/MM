@@ -18,6 +18,7 @@ import json
 from .models import Instrument, Candle, HeatSnapshot, HeatTile
 from .forms import CandleFilterForm, InstrumentCreateForm
 
+from mm08.services.heatmap_fetcher import fetch_board
 
 # ---------- MIXINS ----------
 class InstrumentByTickerMixin:
@@ -224,15 +225,23 @@ class HeatmapView(TemplateView):
             qs = qs.filter(label=label)
 
         if date_s:
+            # input[type=date] даёт YYYY-MM-DD → фильтруем по дате
             try:
-                dt_ = timezone.datetime.fromisoformat(date_s)
-                qs = qs.filter(created_at__date=dt_.date())
+                from datetime import date as _date
+                qs = qs.filter(created_at__date=_date.fromisoformat(date_s))
             except Exception:
                 pass
 
-        return qs.select_related().prefetch_related(
-            Prefetch("tiles", queryset=HeatTile.objects.order_by("-change_pct"))
-        ).first()
+        tiles_qs = (HeatTile.objects
+                    .only("ticker", "shortname", "last", "change_pct", "turnover")
+                    .order_by("-change_pct"))
+
+        return (qs.only("id", "board", "label", "created_at")
+                .prefetch_related(Prefetch("tiles", queryset=tiles_qs))
+                .first())
+
+    
+    
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -304,45 +313,52 @@ class HeatmapRefreshView(PermissionRequiredMixin, View):
         board = (request.POST.get("board") or "TQBR").upper()
         label = (request.POST.get("label") or "fast").strip()
 
-        # 1) тянем свежие данные с ISS
-        engine, market, rows = fetch_board(board)
-        if not rows:
-            messages.error(request, "Не удалось получить данные с MOEX.")
+        # 1) получаем свежие данные
+        try:
+            engine, market, rows = fetch_board(board)
+        except Exception as e:
+            messages.error(request, f"Ошибка запроса к ISS: {e}")
             return redirect(f"{reverse('mm08:heatmap')}?board={board}&label={label}")
 
-        # 2) снапшот на сегодня (UNIQUE по date/board/label) — обновляем или создаём
+        if not rows:
+            messages.warning(request, "ISS вернул пустые данные.")
+            return redirect(f"{reverse('mm08:heatmap')}?board={board}&label={label}")
+
+        # 2) снапшот «за сегодня» — обновляем/создаём, чтобы не ловить UNIQUE
         snap_date = timezone.localdate()
         snap, _ = HeatSnapshot.objects.get_or_create(
-            date=snap_date, board=board, label=label,
-            defaults={"source": "moex"}
+            date=snap_date, board=board, label=label, defaults={"source": "moex"}
         )
-
-        # bump created_at, чтобы на странице было «свежее» время
+        # обновим время, чтобы на странице сразу было «свежее»
         snap.created_at = timezone.now()
         snap.source = "moex"
         snap.save(update_fields=["created_at", "source"])
 
-        # 3) перезаписываем плитки
+        # 3) перезапишем плитки
         snap.tiles.all().delete()
-        tiles = [
-            HeatTile(
-                snapshot=snap,
-                ticker=r.get("ticker", "")[:20],
-                shortname=r.get("shortname", "")[:100],
-                engine=engine, market=market, board=board,
-                last=r.get("last") or 0,
-                change_pct=r.get("change_pct"),   # может быть None
-                turnover=r.get("turnover") or 0,
-                volume=r.get("volume") or 0,
-                lot_size=r.get("lot_size") or 1,
-            )
-            for r in rows if r.get("ticker")
-        ]
-        HeatTile.objects.bulk_create(tiles, batch_size=1000)
+        HeatTile.objects.bulk_create(
+            [
+                HeatTile(
+                    snapshot=snap,
+                    ticker=r["ticker"],
+                    shortname=r.get("shortname") or "",
+                    engine=engine,
+                    market=market,
+                    board=board,
+                    last=r.get("last") or 0,
+                    change_pct=r.get("change_pct"),
+                    turnover=r.get("turnover") or 0,
+                    volume=r.get("volume") or 0,
+                    lot_size=r.get("lot_size") or 1,
+                )
+                for r in rows
+                if r.get("ticker")
+            ],
+            batch_size=1000,
+        )
 
         messages.success(
-            request,
-            f"Обновлено: {board} ({label}). Тикеров: {len(tiles)}."
+            request, f"Обновлено: {board} ({label}). Тикеров: {len(rows)}."
         )
         return redirect(f"{reverse('mm08:heatmap')}?board={board}&label={label}")
 

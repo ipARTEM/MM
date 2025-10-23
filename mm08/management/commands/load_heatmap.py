@@ -155,10 +155,10 @@ def fetch_board(board: str) -> tuple[str, str, list[dict]]:
 # ---- Команда --------------------------------------------------------------------
 
 class Command(BaseCommand):
-    help = "Загрузить теплокарту MOEX. Пример: load_heatmap --board TQBR --label fast"
+    help = "Загрузить теплокарту MOEX. Пример: --board TQBR --label fast"
 
     def add_arguments(self, parser):
-        parser.add_argument("--date", type=str, help="YYYY-MM-DD; по умолчанию сегодня")
+        parser.add_argument("--date", type=str, help="YYYY-MM-DD")
         parser.add_argument("--board", type=str, default="TQBR")
         parser.add_argument("--label", type=str, default="fast")
 
@@ -166,42 +166,36 @@ class Command(BaseCommand):
     def handle(self, *args, **opt):
         board = (opt.get("board") or "TQBR").upper()
         label = (opt.get("label") or "fast").strip()
-        date_str = opt.get("date")
-
-        if date_str:
-            try:
-                d = dt.datetime.strptime(date_str, "%Y-%m-%d").date()
-            except ValueError:
-                raise CommandError("date должен быть в формате YYYY-MM-DD")
-        else:
-            d = dt.date.today()
-
-        self.stdout.write(f"Загружаю MOEX heatmap: board={board}, date={d}, label={label}")
+        d = dt.datetime.strptime(opt["date"], "%Y-%m-%d").date() if opt.get("date") else dt.date.today()
 
         engine, market, rows = fetch_board(board)
         if not rows:
-            raise CommandError("MOEX вернул пустые данные.")
+            raise CommandError("ISS вернул пустые данные.")
 
-        # Всегда создаём новый снапшот → корректное created_at
-        snap = HeatSnapshot.objects.create(date=d, board=board, label=label, source="moex")
+        snap, _ = HeatSnapshot.objects.get_or_create(
+            date=d, board=board, label=label, defaults={"source": "moex"}
+        )
+        snap.created_at = dt.datetime.now()
+        snap.source = "moex"
+        snap.save(update_fields=["created_at", "source"])
 
-        tiles: list[HeatTile] = []
-        for r in rows:
-            tiles.append(
+        snap.tiles.all().delete()
+        HeatTile.objects.bulk_create(
+            [
                 HeatTile(
                     snapshot=snap,
                     ticker=r["ticker"],
-                    shortname=r["shortname"],
-                    engine=engine,
-                    market=market,
-                    board=board,
-                    last=_to_decimal(r["last"]) or Decimal("0"),
-                    change_pct=_to_decimal(r["change_pct"]),  # допускаем None
-                    turnover=int(r["turnover"] or 0),
-                    volume=int(r["volume"] or 0),
-                    lot_size=int(r["lot_size"] or 1),
+                    shortname=r.get("shortname") or "",
+                    engine=engine, market=market, board=board,
+                    last=r.get("last") or 0,
+                    change_pct=r.get("change_pct"),
+                    turnover=r.get("turnover") or 0,
+                    volume=r.get("volume") or 0,
+                    lot_size=r.get("lot_size") or 1,
                 )
-            )
-        HeatTile.objects.bulk_create(tiles, batch_size=1000)
+                for r in rows
+            ],
+            batch_size=1000,
+        )
 
-        self.stdout.write(self.style.SUCCESS(f"OK: {snap} — сохранено {len(tiles)} тикеров."))
+        self.stdout.write(self.style.SUCCESS(f"OK: {snap} — сохранено {len(rows)} тикеров."))
