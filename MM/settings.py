@@ -192,3 +192,10 @@ if DEBUG and ENABLE_DEBUG_TOOLBAR:
         "debug_toolbar.panels.redirects.RedirectsPanel",
         "debug_toolbar.panels.profiling.ProfilingPanel",
     ]
+
+
+# Оптимизация соединений БД: удерживаем коннект некоторое время (секунды)
+try:
+    DATABASES['default']['CONN_MAX_AGE'] = 60  # баланс между частотой запросов и переустановкой соединений
+except Exception:
+    pass
