@@ -1,20 +1,31 @@
 # Project/mm08/services/pagination.py
+from __future__ import annotations
+from typing import List
 
-from typing import List  # импортируем типы для подсказок
+def window_numbers(current: int, total: int, window_size: int = 5) -> List[int]:
+    """Возвращает окно номеров страниц вокруг текущей.
 
-def window_numbers(page, radius: int = 5) -> List[int]:
-    # type: (object, int) -> List[int]
-    # Функция возвращает список номеров страниц вокруг текущей — для удобной навигации в пагинации.
-    # page: объект django.core.paginator.Page
-    # radius: сколько номеров показывать слева/справа от текущей страницы
+    Parameters
+    ----------
+    current : int
+        Текущий номер страницы (1-based).
+    total : int
+        Общее число страниц.
+    window_size : int, optional
+        Ширина окна, по умолчанию 5.
 
-    try:
-        current: int = int(page.number)                  # получаем номер текущей страницы
-        last: int = int(page.paginator.num_pages)        # количество всех страниц
-    except Exception:
-        return []                                        # если что-то не так — возвращаем пустой список
+    Returns
+    -------
+    List[int]
+        Список номеров страниц для пагинации.
+    """
+    if total <= 0:
+        return []
+    current = max(1, min(current, total))
+    window_size = max(1, window_size)
 
-    start: int = max(1, current - radius)               # левая граница окна
-    end: int = min(last, current + radius)              # правая граница окна
-
-    return list(range(start, end + 1))                  # формируем список номеров [start, ..., end]
+    half = window_size // 2
+    start = max(1, current - half)
+    end = min(total, start + window_size - 1)
+    start = max(1, end - window_size + 1)
+    return list(range(start, end + 1))

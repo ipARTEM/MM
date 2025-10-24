@@ -3,14 +3,23 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib.auth.views import redirect_to_login
 from django.core.paginator import Paginator, EmptyPage
-from django.http import JsonResponse, HttpResponseRedirect, HttpResponse
+from django.http import JsonResponse, HttpResponseRedirect, HttpResponse, HttpRequest
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 from django.views import View
 from django.views.generic import TemplateView, ListView, FormView, DetailView
 from django.shortcuts import redirect, render
 from django.db.models import Max, Prefetch
 from django.db import transaction
+
+from typing import Any, Dict, List
+from django.http import HttpRequest
+from django.utils import timezone
+from django.views.generic import TemplateView
+from django.contrib.auth.mixins import LoginRequiredMixin
+
 
 from decimal import Decimal
 import json
@@ -18,7 +27,10 @@ import json
 from .models import Instrument, Candle, HeatSnapshot, HeatTile
 from .forms import InstrumentCreateForm, CandleFilterForm
 from .services.pagination import window_numbers
-from typing import Any
+from .services.heatmap import build_snapshot  #  функция сборки
+from mm08.services.iss_client import fetch_tqbr_all
+
+from typing import Any, Dict, List
 
 
 # ---------- MIXINS ----------
@@ -220,165 +232,79 @@ class ChartDataView(LoginRequiredMixin, InstrumentByTickerMixin, View):
 class HeatmapView(LoginRequiredMixin, TemplateView):
     template_name = "mm08/heatmaps.html"
 
-    # сколько карточек на страницу (по умолчанию 21)
-    DEFAULT_PER_PAGE = 21
-    MAX_PER_PAGE = 200
-
-    def _parse_int(self, s: str | None, default: int, upper: int | None = None) -> int:
-        try:
-            v = int(s) if s else default
-            if upper is not None:
-                v = min(v, upper)
-            return max(1, v)
-        except Exception:
-            return default
-
-    def _pick_snapshot(self, board: str, label: str, date_s: str) -> "HeatSnapshot | None":
-        """
-        Выбираем снапшот:
-          1) если переданы date/label — пробуем строго по ним,
-          2) иначе берём ЛЮБОЙ последний по board,
-          3) если по п.1 ничего не нашли — откатываемся к п.2 (чтобы не было пусто).
-        Обязательно префетчим плитки, отсортированные по change_pct.
-        """
-        # базовый QS снапшотов
-        qs = HeatSnapshot.objects.filter(board=board).only("id", "board", "label", "date", "created_at")
-
-        # применяем фильтры, если заданы
-        filtered = qs
-        if label:
-            filtered = filtered.filter(label=label)
-
-        if date_s:
-            from django.utils.dateparse import parse_date, parse_datetime
-            dt = parse_date(date_s) or (parse_datetime(date_s).date() if parse_datetime(date_s) else None)
-            if dt:
-                filtered = filtered.filter(date=dt)
-
-        # порядок — от новых к старым
-        filtered = filtered.order_by("-date", "-created_at")
-        base_ordered = qs.order_by("-date", "-created_at")
-
-        # подготавливаем префетч плиток
-        tiles_qs = HeatTile.objects.order_by("-change_pct").only(
-            "id", "ticker", "shortname", "last", "change_pct", "turnover", "volume", "snapshot_id"
-        )
-        pref = Prefetch("tiles", queryset=tiles_qs)
-
-        snap = filtered.prefetch_related(pref).first()
-        if snap is None:
-            # fallback: самый последний вообще, чтобы страница не была пустой
-            snap = base_ordered.prefetch_related(pref).first()
-        return snap
-
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         ctx = super().get_context_data(**kwargs)
 
-        board = (self.request.GET.get("board") or "TQBR").strip()
+        board = (self.request.GET.get("board") or "TQBR").upper()
         label = (self.request.GET.get("label") or "").strip()
-        date_s = (self.request.GET.get("date") or "").strip()
-        per_page = self._parse_int(self.request.GET.get("per"), self.DEFAULT_PER_PAGE, self.MAX_PER_PAGE)
+        per = int(self.request.GET.get("per") or 42)
 
-        snapshot = self._pick_snapshot(board=board, label=label, date_s=date_s)
+        # берем последний снимок по доске/метке (если метка не задана — любой)
+        qs = HeatSnapshot.objects.filter(board=board).order_by("-date", "-created_at")
+        if label:
+            qs = qs.filter(label=label)
+        snapshot = qs.first()
 
-        tiles_list: list["HeatTile"] = []
-        if snapshot is not None:
-            # материализуем список плиток один раз, чтоб шаблон не гонял БД
-            tiles_list = list(snapshot.tiles.all())
+        tiles = HeatTile.objects.none()
+        if snapshot:
+            tiles = HeatTile.objects.filter(snapshot=snapshot).order_by("-change_pct", "ticker")
 
-        # пагинация
-        from django.core.paginator import Paginator, EmptyPage
-        paginator = Paginator(tiles_list, per_page)
-        page_num = self.request.GET.get("page") or 1
-        try:
-            page_obj = paginator.page(page_num)
-        except EmptyPage:
-            page_obj = paginator.page(1)
+        # простая пагинация руками
+        from django.core.paginator import Paginator
+        paginator = Paginator(tiles, per)
+        page = int(self.request.GET.get("page") or 1)
+        page_obj = paginator.get_page(page)
+        page_nums = window_numbers(page_obj.number, paginator.num_pages, 5)
 
         ctx.update(
-            {
-                "title": "Теплокарты MOEX",
-                "board": board,
-                "label": label,
-                "date": date_s,
-                "snapshot": snapshot,
-                "page_obj": page_obj,
-                "per": per_page,
-                "total_tiles": len(tiles_list),
-            }
+            board=board,
+            snapshot=snapshot,
+            tiles=page_obj.object_list,
+            paginator=paginator,
+            page_obj=page_obj,
+            page_numbers=page_nums,
+            per=per,
+            per_choices=[21, 42, 84],
+            date=snapshot.date if snapshot else "",
         )
         return ctx
 
 class HeatmapRefreshView(LoginRequiredMixin, View):
-    """
-    Обновление/пересборка снапшота теплокарты.
-    GET/POST-параметры:
-      - board: код доски (по умолчанию "TQBR")
-      - label: метка снапшота (напр. "fast"/"fresh"/"manual")
-      - replace: "1"/"true"/"yes" → перезаписать существующий снимок за СЕГОДНЯ (по умолчанию ВКЛ)
-      - redirect: "1" → после сборки сделать 302 на /heatmaps/?board=...&label=...
-    """
-
-    def _do(self, request):
-        # читаем из POST в приоритете (кнопки-формы), затем из GET
-        board = (request.POST.get("board") or request.GET.get("board") or "TQBR").strip()
-        label = (request.POST.get("label") or request.GET.get("label") or "").strip()
-
-        # по умолчанию разрешаем перезапись (чтобы кнопки без replace работали ожидаемо)
-        replace_raw = (request.POST.get("replace") or request.GET.get("replace") or "1").strip().lower()
-        replace = replace_raw in ("1", "true", "yes", "y")
-
-        need_redirect = (request.POST.get("redirect") or request.GET.get("redirect") or "").strip() in ("1", "true", "yes", "y")
+    """POST: подтянуть данные с MOEX, собрать/обновить снимок, вернуть JSON или редирект."""
+    def post(self, request, *args, **kwargs):
+        board = (request.POST.get("board") or request.GET.get("board") or "TQBR").strip().upper()
+        label = (request.POST.get("label") or request.GET.get("label") or "fast").strip()
+        date_s = (request.POST.get("date") or request.GET.get("date") or "").strip()
+        replace = True  # пересобираем плитки, чтобы получить свежие котировки
 
         try:
-            from .services.heatmap import build_snapshot
-        except Exception:
+            snapshot, created = build_snapshot(board=board, label=label, date=date_s or None, replace=replace)
+        except Exception as exc:
             return JsonResponse(
                 {
-                    "status": "not_implemented",
+                    "status": "error",
                     "board": board,
                     "label": label,
-                    "hint": "Добавьте mm08/services/heatmap.py с функцией build_snapshot(board, label, replace).",
+                    "error": f"build_snapshot failed: {exc}",
                 },
-                status=501,
-                json_dumps_params={"ensure_ascii": False},
-            )
-
-        try:
-            snapshot, created = build_snapshot(board=board, label=label, replace=replace)
-
-            if need_redirect:
-                from django.shortcuts import redirect
-                from django.urls import reverse
-                url = f"{reverse('mm08:heatmaps')}?board={board}"
-                if label:
-                    url += f"&label={label}"
-                return redirect(url)
-
-            return JsonResponse(
-                {
-                    "status": "ok",
-                    "board": board,
-                    "label": label or "manual",
-                    "replace": replace,
-                    "created": created,
-                    "snapshot_id": snapshot.id,
-                    "date": str(getattr(snapshot, "date", "")),
-                },
-                json_dumps_params={"ensure_ascii": False},
-            )
-        except Exception as e:
-            return JsonResponse(
-                {"status": "error", "board": board, "label": label, "error": f"build_snapshot failed: {e}"},
                 status=500,
-                json_dumps_params={"ensure_ascii": False},
             )
 
-    def get(self, request, *args, **kwargs):
-        return self._do(request)
+        # Если в форме есть скрытый redirect=1 — вернёмся на список
+        if request.POST.get("redirect") == "1" or request.GET.get("redirect") == "1":
+            return HttpResponseRedirect(f"/heatmaps/?board={board}&label={label}")
 
-    def post(self, request, *args, **kwargs):
-        return self._do(request)
+        return JsonResponse(
+            {
+                "status": "ok",
+                "board": board,
+                "label": label,
+                "replace": replace,
+                "created": created,
+                "snapshot_id": snapshot.id,
+                "date": str(snapshot.date),
+            }
+        )
 
     
 class HeatmapExportView(LoginRequiredMixin, View):
@@ -478,3 +404,68 @@ def custom_permission_denied(request, exception=None):
     }
     # используем шаблон templates/mm08/403.html
     return render(request, "mm08/403.html", context=context, status=403)
+
+class StocksHeatmapView(LoginRequiredMixin, TemplateView):
+    # Страница "Теплокарта Акции": кнопка "Скачать данные по Акциям" + таблица
+    template_name = "mm08/heatmap_stocks.html"          # путь к шаблону
+
+    def get_context_data(self, **kwargs: Any) -> Dict[str, Any]:
+        # GET: показываем пустую таблицу и скрытую строку среза
+        ctx = super().get_context_data(**kwargs)        # базовый контекст
+        ctx["board"] = "TQBR"                           # фиксируем доску TQBR
+        ctx["snapshot_text"] = ""                       # пока нет среза
+        ctx["rows"] = []                                # пустые данные
+        return ctx                                      # отдаём контекст
+
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any):
+        # POST: тянем данные с ISS, собираем таблицу и формируем строку "Срез: ..."
+        context = self.get_context_data(**kwargs)       # получаем базовый контекст
+        rows: List[dict] = fetch_tqbr_all()             # тянем все страницы по TQBR
+        now = timezone.localtime()                      # локализованное текущее время
+        # Формируем строку "Срез: TQBR на DD.MM.YYYY HH:MM"
+        context["snapshot_text"] = f"Срез: TQBR на {now.strftime('%d.%m.%Y %H:%M')}"  # человекочитаемая дата
+        context["rows"] = rows                          # кладём данные для таблицы
+        return self.render_to_response(context)         # рендерим шаблон
+    
+
+class StocksListView(LoginRequiredMixin, TemplateView):
+    template_name = "mm08/stocks_list.html"
+
+    def get_context_data(self, **kwargs: Any) -> Dict[str, Any]:
+        ctx = super().get_context_data(**kwargs)
+        ctx.setdefault("rows", [])
+        ctx.setdefault("slice", None)
+        ctx.setdefault("error", None)
+        return ctx
+
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any):
+        from .services.iss_client import fetch_tqbr_all  # локальный импорт, чтобы не тащить при старте
+
+        ctx = self.get_context_data()
+        try:
+            raw: List[dict] = fetch_tqbr_all()  # secid/shortname/last/change_pct/board (нижний регистр)
+
+            # Нормализуем ключи под единый формат, безопасно достаём значения
+            rows: List[Dict[str, Any]] = [
+                {
+                    "SECID": r.get("secid"),
+                    "SHORTNAME": r.get("shortname"),
+                    "BOARD": r.get("board"),
+                    "LAST": r.get("last"),
+                    "CHANGE_PCT": r.get("change_pct"),  # может быть None
+                }
+                for r in raw
+            ]
+
+            # Сортировка: сначала те, где есть значение, затем по убыванию процента
+            rows.sort(key=lambda x: (x["CHANGE_PCT"] is None, -(x["CHANGE_PCT"] or 0)))
+
+            ctx["rows"] = rows
+            ctx["snapshot"] = {
+                "board": "TQBR",
+                "ts": timezone.localtime(),  # время «среза» (когда скачали)
+            }
+        except Exception as e:
+            ctx["error"] = f"{type(e).__name__}: {e}"
+
+        return self.render_to_response(ctx)

@@ -1,0 +1,87 @@
+<!-- Project/templates/mm08/heatmap_stocks.html -->
+
+{% extends 'mm08/base.html' %}
+{% block title %}
+  Теплокарта Акции (TQBR)
+{% endblock %}
+
+{% block content %}
+  <div class="mm-card">
+    <div class="mm-heatbar">
+      <h2 style="margin:0;">Теплокарта Акции (TQBR)</h2>
+
+      <!-- Форма для "Скачать данные по Акциям" -->
+      <form method="post" action="{% url 'mm08:heatmap_stocks' %}" style="display:flex; gap:10px; align-items:center;">
+        {% csrf_token %}
+        <button type="submit" class="mm-btn">Скачать данные по Акциям</button>
+
+        <!-- Строка "Срез: TQBR на DD.MM.YYYY HH:MM" -->
+        {% if snapshot_text %}
+          <span style="color:#6b7280;">{{ snapshot_text }}</span>
+        {% endif %}
+      </form>
+    </div>
+
+    <!-- Таблица с данными -->
+    <div style="margin-top:14px; overflow:auto;">
+      <table class="mm-table">
+        <thead>
+          <tr>
+            <th>SECID</th>
+            <th>SHORTNAME</th>
+            <th>LAST</th>
+            <th>OPEN</th>
+            <th>HIGH</th>
+            <th>LOW</th>
+            <th>PREVPRICE</th>
+            <th>CLOSE</th>
+            <th>VOLUME</th>
+            <th>VALTODAY</th>
+            <th>CHANGE %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+            <tr>
+              <td>{{ r.SECID }}</td>
+              <td>{{ r.SHORTNAME }}</td>
+              <td>
+                {% if r.LAST %}{{ r.LAST|floatformat:2 }}{% endif %}
+              </td>
+              <td>
+                {% if r.OPEN %}{{ r.OPEN|floatformat:2 }}{% endif %}
+              </td>
+              <td>
+                {% if r.HIGH %}{{ r.HIGH|floatformat:2 }}{% endif %}
+              </td>
+              <td>
+                {% if r.LOW %}{{ r.LOW|floatformat:2 }}{% endif %}
+              </td>
+              <td>
+                {% if r.PREVPRICE %}{{ r.PREVPRICE|floatformat:2 }}{% endif %}
+              </td>
+              <td>
+                {% if r.CLOSE %}{{ r.CLOSE|floatformat:2 }}{% endif %}
+              </td>
+              <td>
+                {% if r.VOLUME %}{{ r.VOLUME }}{% endif %}
+              </td>
+              <td>
+                {% if r.VALTODAY %}{{ r.VALTODAY|floatformat:0 }}{% endif %}
+              </td>
+              <td>
+                {% if r.CHANGE_PCT is not None %}
+                  {{ r.CHANGE_PCT|floatformat:2 }}%
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="11" style="color:#6b7280;">Нажмите «Скачать данные по Акциям», чтобы загрузить актуальный срез TQBR.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}

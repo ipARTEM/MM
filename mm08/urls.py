@@ -33,7 +33,11 @@ urlpatterns = [
     path("heatmaps/refresh/", views.HeatmapRefreshView.as_view(), name="heatmap_refresh"),
     path("heatmaps/export.csv", views.HeatmapExportView.as_view(), name="heatmap_export"),
 
+    path("heatmap/stocks/", views.StocksHeatmapView.as_view(), name="heatmap_stocks"),  # страница "Теплокарта Акции"
+
 
     path("moex/instrument-info/", api_views.api_moex_instrument_info, name="moex_instrument_info"),
+
+    path("stocks/", views.StocksListView.as_view(), name="stocks_list"),
 ]
 

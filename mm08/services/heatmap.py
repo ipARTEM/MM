@@ -1,112 +1,168 @@
 # Project/mm08/services/heatmap.py
-# Идемпотентная сборка снапшота теплокарты с upsert-поведением.
-
 from __future__ import annotations
 
-from decimal import Decimal
-from typing import List, Tuple
+import datetime as dt
+from typing import Dict, List, Tuple, Optional
 
+import requests
 from django.db import transaction
-from django.db.models import OuterRef, Subquery
-from django.utils import timezone
 
-from ..models import Instrument, Candle, HeatSnapshot, HeatTile
+from mm08.models import Instrument, HeatSnapshot, HeatTile
 
 
-BULK_SIZE: int = 1000  # размер пачки для bulk_create
+# --- Константы и утилиты -----------------------------------------------------
+
+# Сопоставление борд -> (engine, market)
+BOARD_MAP: Dict[str, Tuple[str, str]] = {
+    "TQBR": ("stock", "shares"),   # акции
+    "RFUD": ("futures", "forts"),  # фьючерсы
+    # при необходимости добавляйте другие доски
+}
+
+ISS_BASE = "https://iss.moex.com/iss"
 
 
-def _latest_candle_subqueries():
-    """
-    Подзапросы для последней свечи (dt, close, volume) по каждому инструменту.
-    Возвращает кортеж (dt_subq, close_subq, volume_subq).
-    """
-    last_dt_sq = Candle.objects.filter(instrument=OuterRef("pk")).order_by("-dt").values("dt")[:1]
-    last_close_sq = Candle.objects.filter(instrument=OuterRef("pk")).order_by("-dt").values("close")[:1]
-    last_volume_sq = Candle.objects.filter(instrument=OuterRef("pk")).order_by("-dt").values("volume")[:1]
-    return last_dt_sq, last_close_sq, last_volume_sq
-
-
-def build_snapshot(board: str = "TQBR", label: str = "", replace: bool = True) -> Tuple[HeatSnapshot, bool]:
-    """
-    Собирает (или обновляет) снапшот теплокарты.
-
-    Поведение:
-      - Вычисляет сегодняшнюю дату (локальную) → это поле уникальности вместе с board+label.
-      - get_or_create(date=today, board=board, label=label or "manual").
-      - Если снапшот уже был и replace=True → удаляем старые плитки и создаём заново.
-      - Возвращает (snapshot, created), где created=True, если снапшот только что создан.
-
-    Параметры:
-      board   : код доски, по умолчанию "TQBR"
-      label   : метка снапшота; если пустая, используется "manual"
-      replace : если False — при существующем снапшоте данные не перетираем, просто возвращаем его
-    """
-    label = label or "manual"
-    today = timezone.localdate()  # важно: уникальность по ДАТЕ, не по datetime
-
-    # Подготовим инструменты с аннотациями по последней свече
-    last_dt_sq, last_close_sq, last_volume_sq = _latest_candle_subqueries()
-    # делаем шире: берем всех инструментов указанной доски (без фильтра is_active),
-# чтобы теплокарта всегда была «полной», даже если свечей в БД пока нет.
-    instruments_qs = (
-        Instrument.objects.filter(board=board)
-        .only("id", "ticker", "shortname", "board")
-        .annotate(
-            _last_dt=Subquery(last_dt_sq),
-            _last_close=Subquery(last_close_sq),
-            _last_volume=Subquery(last_volume_sq),
-        )
-        .order_by("ticker")
+def _iss_board_url(board: str) -> str:
+    engine, market = BOARD_MAP[board]
+    # В marketdata есть LAST, LASTTOPREVPRICE, CHANGE и т.д.
+    return (
+        f"{ISS_BASE}/engines/{engine}/markets/{market}/boards/{board}/"
+        f"securities.json?iss.meta=off&iss.only=securities,marketdata"
     )
 
-    instruments: List[Instrument] = list(instruments_qs)
+
+def _fetch_board_data(board: str) -> Tuple[Dict[str, dict], Dict[str, dict]]:
+    """
+    Тянем секции `securities` и `marketdata` и раскладываем их в словари по SECID.
+    Возвращаем (securities_by_secid, marketdata_by_secid)
+    """
+    url = _iss_board_url(board)
+    resp = requests.get(url, timeout=20)
+    resp.raise_for_status()
+    data = resp.json()
+
+    # Парсим securities
+    sec_cols = data["securities"]["columns"]
+    sec_pos = {c: i for i, c in enumerate(sec_cols)}
+    securities = {}
+    for row in data["securities"]["data"]:
+        secid = row[sec_pos.get("SECID")]
+        if not secid:
+            continue
+        securities[secid] = {
+            "secid": secid,
+            "shortname": row[sec_pos.get("SHORTNAME")],
+            "board": row[sec_pos.get("BOARDID")] or board,
+        }
+
+    # Парсим marketdata
+    md_cols = data["marketdata"]["columns"]
+    md_pos = {c: i for i, c in enumerate(md_cols)}
+    marketdata = {}
+    for row in data["marketdata"]["data"]:
+        secid = row[md_pos.get("SECID")]
+        if not secid:
+            continue
+        last = row[md_pos.get("LAST")]
+        # LASTTOPREVPRICE у акций — это отношение LAST к PREVPRICE в %
+        # Преобразуем к "изменение, %" (т.е. -1.25, +2.10 и т.д.)
+        last_to_prev_pct = row[md_pos.get("LASTTOPREVPRICE")]
+        change_pct = None
+        if last_to_prev_pct is not None:
+            try:
+                change_pct = float(last_to_prev_pct) - 100.0
+            except Exception:
+                change_pct = None
+
+        marketdata[secid] = {
+            "last": last,
+            "change_pct": change_pct,
+        }
+
+    return securities, marketdata
+
+
+# --- Публичный API ------------------------------------------------------------
+
+def build_snapshot(
+    board: str,
+    label: str = "fast",
+    date: Optional[str] = None,
+    replace: bool = True,
+) -> Tuple[HeatSnapshot, bool]:
+    """
+    Собирает снимок теплокарты: тянет котировки ISS, апсертит инструменты и плитки.
+
+    Parameters
+    ----------
+    board : str
+        Код доски (например, 'TQBR', 'RFUD').
+    label : str, optional
+        Метка снимка ('fast' / 'fresh' и т.п.), по умолчанию 'fast'.
+    date : Optional[str], optional
+        Явная дата снимка в формате YYYY-MM-DD; по умолчанию сегодня.
+    replace : bool, optional
+        Если True и снимок существует — перезаполняем плитки. По умолчанию True.
+
+    Returns
+    -------
+    (snapshot, created) : Tuple[HeatSnapshot, bool]
+    """
+    board = (board or "TQBR").upper()
+    if board not in BOARD_MAP:
+        raise ValueError(f"Unsupported board: {board}")
+
+    # Дата снимка
+    if date:
+        snap_date = dt.date.fromisoformat(date)
+    else:
+        snap_date = dt.date.today()
+
+    # Тянем данные с ISS
+    securities, marketdata = _fetch_board_data(board)
 
     with transaction.atomic():
-        # Ищем или создаём снапшот. created=True → впервые за сегодня.
+        # Снапшот
         snapshot, created = HeatSnapshot.objects.get_or_create(
-            date=today,
             board=board,
-            label=label,
-            defaults={
-                # на случай, если в модели есть created_at (не критично, если auto_now_add)
-                "created_at": timezone.now(),
-            },
+            label=label or "",
+            date=snap_date,
+            defaults={"created_at": dt.datetime.now()},
         )
 
-        if (not created) and (not replace):
-            # Идемпотентный режим без перезаписи — просто вернуть существующий
-            return snapshot, False
-
-        # Если снапшот существовал и replace=True — очищаем старые плитки
-        if not created:
+        if not created and replace:
             HeatTile.objects.filter(snapshot=snapshot).delete()
 
-        # Сформируем новые плитки
-        new_tiles: List[HeatTile] = []
-        for inst in instruments:
-            last = inst.__dict__.get("_last_close") or Decimal("0")
-            volume = inst.__dict__.get("_last_volume") or 0
+        # Апсерты инструментов и создание плиток
+        tiles: List[HeatTile] = []
+        for secid, sec in securities.items():
+            md = marketdata.get(secid, {})
+            last = md.get("last")
+            change_pct = md.get("change_pct")
 
-            try:
-                turnover = (Decimal(str(last)) * Decimal(str(volume))) if last is not None else Decimal("0")
-            except Exception:
-                turnover = Decimal("0")
+            inst, _ = Instrument.objects.update_or_create(
+                board=board,
+                ticker=secid,
+                defaults={
+                    "shortname": sec.get("shortname") or secid,
+                    "engine": BOARD_MAP[board][0],
+                },
+            )
 
-            new_tiles.append(
+            tiles.append(
                 HeatTile(
                     snapshot=snapshot,
+                    instrument=inst,
                     ticker=inst.ticker,
-                    shortname=getattr(inst, "shortname", "") or inst.ticker,
-                    last=last or Decimal("0"),
-                    change_pct=Decimal("0"),  # упрощённо; можно рассчитать от предыдущей свечи
-                    turnover=turnover,
-                    volume=volume or 0,
+                    shortname=inst.shortname,
+                    last=last,
+                    change_pct=change_pct,
                 )
             )
 
-        # Вставляем пачками
-        for i in range(0, len(new_tiles), BULK_SIZE):
-            HeatTile.objects.bulk_create(new_tiles[i : i + BULK_SIZE], batch_size=BULK_SIZE)
+        if tiles:
+            HeatTile.objects.bulk_create(tiles, batch_size=500)
 
     return snapshot, created
+
+

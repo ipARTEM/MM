@@ -1,0 +1,52 @@
+{% extends "mm08/base.html" %}
+{% block title %}Акции (TQBR){% endblock %}
+
+{% block content %}
+<div class="mm-card">
+  <h2 style="margin:0 0 12px">Акции (TQBR)</h2>
+
+  <form method="post" class="controls">
+    {% csrf_token %}
+    <button class="btn btn-primary" type="submit">Скачать данные по Акциям</button>
+  </form>
+
+  {% if slice %}
+    <div style="margin:10px 0; color:#4b5563;">
+      Срез: {{ slice.board }} — {{ slice.ts|date:"d.m.Y H:i" }}
+    </div>
+  {% endif %}
+
+  {% if error %}
+    <div style="margin:10px 0; color:#b91c1c;">Ошибка: {{ error }}</div>
+  {% endif %}
+
+  {% if rows %}
+    <div class="table-wrap">
+      <table class="mm-table">
+        <thead>
+          <tr>
+            <th>Тикер</th>
+            <th>Название</th>
+            <th>LAST</th>
+            <th>Δ, %</th>
+            <th>Борд</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td>{{ r.SECID }}</td>
+            <td>{{ r.SHORTNAME }}</td>
+            <td>{% if r.LAST %}{{ r.LAST|floatformat:2 }}{% endif %}</td>
+            <td>{% if r.CHANGE_PCT is not None %}{{ r.CHANGE_PCT|floatformat:2 }}{% endif %}</td>
+            <td>{{ r.BOARD }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p style="margin-top:12px;">Нажмите «Скачать данные по Акциям», чтобы получить таблицу.</p>
+  {% endif %}
+</div>
+{% endblock %}
