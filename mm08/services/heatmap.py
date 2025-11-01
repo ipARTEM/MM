@@ -8,6 +8,7 @@ import requests
 from django.db import transaction
 
 from mm08.models import Instrument, HeatSnapshot, HeatTile
+from django.utils import timezone
 
 
 # --- Константы и утилиты -----------------------------------------------------
@@ -127,7 +128,7 @@ def build_snapshot(
             board=board,
             label=label or "",
             date=snap_date,
-            defaults={"created_at": dt.datetime.now()},
+            # defaults={"created_at": dt.datetime.now()},    # ← можно, если у модели нет auto_now_add
         )
 
         if not created and replace:
@@ -149,20 +150,26 @@ def build_snapshot(
                 },
             )
 
+            # безопасное значение для last: модель NOT NULL → подставим 0, если None
+            last_safe = last if last is not None else 0
+
             tiles.append(
                 HeatTile(
                     snapshot=snapshot,
-                    instrument=inst,
                     ticker=inst.ticker,
                     shortname=inst.shortname,
-                    last=last,
-                    change_pct=change_pct,
+                    last=last_safe,             # ← используем безопасное значение
+                    change_pct=change_pct,      # может быть None — модель это допускает
                 )
             )
+
 
         if tiles:
             HeatTile.objects.bulk_create(tiles, batch_size=500)
 
     return snapshot, created
+
+
+
 
 

@@ -439,19 +439,61 @@ class StocksListView(LoginRequiredMixin, TemplateView):
         return ctx
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any):
-        from .services.iss_client import fetch_tqbr_all  # локальный импорт, чтобы не тащить при старте
+        from .services.iss_client import fetch_tqbr_all  # локальный импорт
+        from .models import HeatSnapshot
 
         ctx = self.get_context_data()
         action = (request.POST.get("action") or "fetch").strip()
+
         try:
-            raw: List[dict] = fetch_tqbr_all()  # secid/shortname/last/change_pct/board (нижний регистр)
+            # ---------- show_last: читаем из БД, внешние запросы НЕ делаем ----------
+            if action == "show_last":
+                # предпочтительные метки: сначала "stocks", потом "fast", "fresh", "close"
+                # Сначала пробуем "stocks", если нет — берём любой последний по TQBR
+                last_snap = (
+                    HeatSnapshot.objects.filter(board="TQBR", label="stocks").order_by("-created_at").first()
+                    or HeatSnapshot.objects.filter(board="TQBR").order_by("-created_at").first()
+                )
+
+                if not last_snap:
+                    ctx["error"] = "В БД нет сохранённых срезов по TQBR."
+                    ctx["rows"] = []
+                    return self.render_to_response(ctx)
 
 
-            
+                if not last_snap:
+                    ctx["error"] = "В БД нет сохранённых срезов по TQBR."
+                    ctx["rows"] = []
+                    return self.render_to_response(ctx)
 
-            # Нормализуем ключи под единый формат, безопасно достаём значения
-            rows: List[Dict[str, Any]] = [
-            {
+
+                tiles_qs = last_snap.tiles.all().values(
+                    "ticker", "shortname", "last", "change_pct", "turnover", "volume"
+                )
+                rows: List[Dict[str, Any]] = []
+                for t in tiles_qs:
+                    rows.append({
+                        "SECID": t["ticker"],
+                        "SHORTNAME": t["shortname"] or "",
+                        "BOARD": "TQBR",
+                        "LAST": float(t["last"]) if t["last"] is not None else None,
+                        "OPEN": None, "LOW": None, "HIGH": None,                  # этих полей нет в HeatTile
+                        "VOLUME": t["volume"] or 0,
+                        "VALTODAY": t["turnover"] or 0,
+                        "CHANGE_PCT": float(t["change_pct"]) if t["change_pct"] is not None else None,
+                    })
+
+                ctx["rows"] = rows
+                ctx["snapshot"] = {
+                    "board": "TQBR",
+                    "ts": timezone.localtime(last_snap.created_at),
+                    "saved": True,
+                }
+                return self.render_to_response(ctx)
+
+            # ---------- fetch/save: тянем ISS и (при save) сохраняем снапшот ----------
+            raw: List[dict] = fetch_tqbr_all()
+            rows: List[Dict[str, Any]] = [{
                 "SECID": r.get("secid"),
                 "SHORTNAME": r.get("shortname"),
                 "BOARD": r.get("board"),
@@ -461,26 +503,25 @@ class StocksListView(LoginRequiredMixin, TemplateView):
                 "HIGH": r.get("high"),
                 "VOLUME": r.get("volume"),
                 "VALTODAY": r.get("valtoday"),
-                "CHANGE_PCT": r.get("change_pct"),  # может быть None
-            }
-            for r in raw
-            ]
+                "CHANGE_PCT": r.get("change_pct"),
+            } for r in raw]
 
-            # Сортировка: сначала те, где есть значение, затем по убыванию процента
             rows.sort(key=lambda x: (x["CHANGE_PCT"] is None, -(x["CHANGE_PCT"] or 0)))
-
-            # Базовый "срез" по текущему времени (если просто скачали)
             snapshot_ts = timezone.localtime()
 
-            # Если нажали "Сохранить срез в БД" — сохраняем через build_snapshot
             if action == "save":
-                snap, created = build_snapshot(board="TQBR", label="stocks", date=None, replace=True)
+                snap, _ = build_snapshot(board="TQBR", label="stocks", date=None, replace=True)
                 snapshot_ts = timezone.localtime(snap.created_at)
                 ctx["snapshot"] = {"board": "TQBR", "ts": snapshot_ts, "saved": True}
             else:
-                # Просто скачали без сохранения
                 ctx["snapshot"] = {"board": "TQBR", "ts": snapshot_ts, "saved": False}
+
+            ctx["rows"] = rows
+            return self.render_to_response(ctx)
+
         except Exception as e:
             ctx["error"] = f"{type(e).__name__}: {e}"
+            return self.render_to_response(ctx)
 
-        return self.render_to_response(ctx)
+    
+
