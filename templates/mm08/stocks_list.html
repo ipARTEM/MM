@@ -7,17 +7,17 @@
   <div class="mm-card">
     <h2 style="margin-top:0;">Акции (доска TQBR)</h2>
 
-    <form method="post" class="controls" style="margin-bottom: 12px;">
+    <form method="post" class="controls" style="margin-bottom: 12px; display:flex; gap:10px; align-items:center;">
       {% csrf_token %}
-      <button type="submit" class="btn btn-primary">Скачать данные по акциям</button>
-      {% if asof %}
-        <span style="margin-left:12px;color:#4b5563;">
-          Срез: TQBR на {{ asof|date:'d.m.Y H:i' }}
-          {% if count %}
-            — {{ count }} инструментов
-          {% endif %}
-        </span>
-      {% endif %}
+      <button type="submit" name="action" value="fetch" class="btn btn-primary">Скачать данные по акциям</button>
+      <button type="submit" name="action" value="save" class="btn">Сохранить срез в БД</button>
+
+      <span style="margin-left:auto; white-space:nowrap;" class="mm-muted">
+        {% if snapshot %}
+          Срез: {{ snapshot.board }} на {{ snapshot.ts|date:'d.m.Y' }} {{ snapshot.ts|time:'H:i' }}
+          {% if snapshot.saved %} ✓ сохранён {% endif %}
+        {% endif %}
+      </span>
     </form>
 
     {% if rows %}

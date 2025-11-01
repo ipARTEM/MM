@@ -434,7 +434,7 @@ class StocksListView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs: Any) -> Dict[str, Any]:
         ctx = super().get_context_data(**kwargs)
         ctx.setdefault("rows", [])
-        ctx.setdefault("slice", None)
+        ctx.setdefault("snapshot", None)
         ctx.setdefault("error", None)
         return ctx
 
@@ -442,29 +442,44 @@ class StocksListView(LoginRequiredMixin, TemplateView):
         from .services.iss_client import fetch_tqbr_all  # локальный импорт, чтобы не тащить при старте
 
         ctx = self.get_context_data()
+        action = (request.POST.get("action") or "fetch").strip()
         try:
             raw: List[dict] = fetch_tqbr_all()  # secid/shortname/last/change_pct/board (нижний регистр)
 
+
+            
+
             # Нормализуем ключи под единый формат, безопасно достаём значения
             rows: List[Dict[str, Any]] = [
-                {
-                    "SECID": r.get("secid"),
-                    "SHORTNAME": r.get("shortname"),
-                    "BOARD": r.get("board"),
-                    "LAST": r.get("last"),
-                    "CHANGE_PCT": r.get("change_pct"),  # может быть None
-                }
-                for r in raw
+            {
+                "SECID": r.get("secid"),
+                "SHORTNAME": r.get("shortname"),
+                "BOARD": r.get("board"),
+                "LAST": r.get("last"),
+                "OPEN": r.get("open"),
+                "LOW": r.get("low"),
+                "HIGH": r.get("high"),
+                "VOLUME": r.get("volume"),
+                "VALTODAY": r.get("valtoday"),
+                "CHANGE_PCT": r.get("change_pct"),  # может быть None
+            }
+            for r in raw
             ]
 
             # Сортировка: сначала те, где есть значение, затем по убыванию процента
             rows.sort(key=lambda x: (x["CHANGE_PCT"] is None, -(x["CHANGE_PCT"] or 0)))
 
-            ctx["rows"] = rows
-            ctx["snapshot"] = {
-                "board": "TQBR",
-                "ts": timezone.localtime(),  # время «среза» (когда скачали)
-            }
+            # Базовый "срез" по текущему времени (если просто скачали)
+            snapshot_ts = timezone.localtime()
+
+            # Если нажали "Сохранить срез в БД" — сохраняем через build_snapshot
+            if action == "save":
+                snap, created = build_snapshot(board="TQBR", label="stocks", date=None, replace=True)
+                snapshot_ts = timezone.localtime(snap.created_at)
+                ctx["snapshot"] = {"board": "TQBR", "ts": snapshot_ts, "saved": True}
+            else:
+                # Просто скачали без сохранения
+                ctx["snapshot"] = {"board": "TQBR", "ts": snapshot_ts, "saved": False}
         except Exception as e:
             ctx["error"] = f"{type(e).__name__}: {e}"
 
