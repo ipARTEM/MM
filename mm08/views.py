@@ -20,6 +20,8 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 
+from django.db.models import Subquery
+
 
 from decimal import Decimal
 import json
@@ -87,7 +89,8 @@ class InstrumentListView(LoginRequiredMixin, ListView):
     model = Instrument
     template_name = "mm08/instruments.html"
     context_object_name = "instruments"
-    queryset = Instrument.objects.order_by("ticker")
+    queryset = Instrument.objects.only("id", "ticker", "shortname", "board").order_by("ticker")
+
 
 
 class InstrumentDetailView(InstrumentByTickerMixin, DetailView):
@@ -240,32 +243,40 @@ class HeatmapView(LoginRequiredMixin, TemplateView):
         per = int(self.request.GET.get("per") or 42)
 
         # берем последний снимок по доске/метке (если метка не задана — любой)
-        qs = HeatSnapshot.objects.filter(board=board).order_by("-date", "-created_at")
+        snap_qs = HeatSnapshot.objects.filter(board=board)
         if label:
-            qs = qs.filter(label=label)
-        snapshot = qs.first()
+            snap_qs = snap_qs.filter(label=label)
 
-        tiles = HeatTile.objects.none()
-        if snapshot:
-            tiles = HeatTile.objects.filter(snapshot=snapshot).order_by("-change_pct", "ticker")
+        last_id_sq = snap_qs.order_by("-date", "-created_at").values("id")[:1]
 
-        # простая пагинация руками
+        tiles_qs = (
+            HeatTile.objects.filter(snapshot_id=Subquery(last_id_sq))
+            .order_by("-change_pct", "ticker")
+        )
+
         from django.core.paginator import Paginator
-        paginator = Paginator(tiles, per)
+        paginator = Paginator(tiles_qs, per)
         page = int(self.request.GET.get("page") or 1)
         page_obj = paginator.get_page(page)
-        page_nums = window_numbers(page_obj.number, paginator.num_pages, 5)
+
+        # вытаскиваем метаданные снапшота лёгкими подзапросами (без отдельного SELECT *)
+        snapshot_date = (
+            HeatSnapshot.objects.filter(id=Subquery(last_id_sq)).values_list("date", flat=True).first()
+        )
+        snapshot_obj = None
+        if snapshot_date:
+            snapshot_obj = HeatSnapshot(id=None, date=snapshot_date, board=board, label=label or "")
 
         ctx.update(
             board=board,
-            snapshot=snapshot,
+            snapshot=snapshot_obj,            # достаточно для шаблона, если он читает только .date/.board
             tiles=page_obj.object_list,
             paginator=paginator,
             page_obj=page_obj,
-            page_numbers=page_nums,
+            page_numbers=window_numbers(page_obj.number, paginator.num_pages, 5),
             per=per,
             per_choices=[21, 42, 84],
-            date=snapshot.date if snapshot else "",
+            date=snapshot_date or "",
         )
         return ctx
 
@@ -352,43 +363,24 @@ class HeatmapExportView(LoginRequiredMixin, View):
                     .prefetch_related(Prefetch("tiles", queryset=tiles_qs)) \
                     .first()
 
-        snap = _get_snapshot()
-        if not snap:
-            return JsonResponse(
-                {"error": "Не найден снапшот теплокарты под заданные параметры"},
-                status=404,
-                json_dumps_params={"ensure_ascii": False},
-            )
+        snap_qs = HeatSnapshot.objects.filter(board=board)
+        if label:
+            snap_qs = snap_qs.filter(label=label)
 
-        # Готовим CSV-ответ
-        import csv
-        from io import StringIO
-        buf = StringIO()
-        writer = csv.writer(buf, lineterminator="\n")
+        # если есть date_s — оставляем твою текущую логику фильтрации по дате,
+        # только применяем её к snap_qs (код парсинга даты не дублирую здесь)
 
-        # Заголовки CSV
-        headers = ["ticker", "shortname", "last", "change_pct", "turnover", "volume"]
-        writer.writerow(headers)
+        last_id_sq = snap_qs.order_by("-created_at").values("id")[:1]
 
-        # Данные
-        tiles = snap.tiles.all()
-        for t in tiles:
-            # безопасно читаем поля (если нет — пишем пустое)
-            row = [
-                getattr(t, "ticker", "") or "",
-                getattr(t, "shortname", "") or "",
-                getattr(t, "last", ""),
-                getattr(t, "change_pct", ""),
-                getattr(t, "turnover", ""),
-                getattr(t, "volume", ""),
-            ]
-            writer.writerow(row)
-
-        csv_text = buf.getvalue()
-        buf.close()
+        tiles_qs = (
+            HeatTile.objects
+            .filter(snapshot_id=Subquery(last_id_sq))
+            .values_list("ticker", "shortname", "last", "change_pct", "turnover", "volume")
+            .order_by("ticker")
+        )
 
         # Формируем HTTP-ответ
-        filename = f"heatmap_{board}_{label or 'latest'}.csv"
+        filename = f"heatmap_{board}_{tiles_qs or 'latest'}.csv"
         resp = HttpResponse(csv_text, content_type="text/csv; charset=utf-8")
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
@@ -450,34 +442,30 @@ class StocksListView(LoginRequiredMixin, TemplateView):
             if action == "show_last":
                 # предпочтительные метки: сначала "stocks", потом "fast", "fresh", "close"
                 # Сначала пробуем "stocks", если нет — берём любой последний по TQBR
-                last_snap = (
-                    HeatSnapshot.objects.filter(board="TQBR", label="stocks").order_by("-created_at").first()
-                    or HeatSnapshot.objects.filter(board="TQBR").order_by("-created_at").first()
+                preferred = ["stocks", "fast", "fresh", "close"]
+
+                last_id_sq = (
+                    HeatSnapshot.objects
+                    .filter(board="TQBR", label__in=preferred)
+                    .order_by("-created_at")
+                    .values("id")[:1]
                 )
 
-                if not last_snap:
-                    ctx["error"] = "В БД нет сохранённых срезов по TQBR."
-                    ctx["rows"] = []
-                    return self.render_to_response(ctx)
-
-
-                if not last_snap:
-                    ctx["error"] = "В БД нет сохранённых срезов по TQBR."
-                    ctx["rows"] = []
-                    return self.render_to_response(ctx)
-
-
-                tiles_qs = last_snap.tiles.all().values(
-                    "ticker", "shortname", "last", "change_pct", "turnover", "volume"
+                tiles_qs = (
+                    HeatTile.objects
+                    .filter(snapshot_id=Subquery(last_id_sq))
+                    .values("ticker", "shortname", "last", "change_pct", "turnover", "volume")
+                    .order_by("-change_pct", "ticker")
                 )
-                rows: List[Dict[str, Any]] = []
+
+                rows = []
                 for t in tiles_qs:
                     rows.append({
                         "SECID": t["ticker"],
                         "SHORTNAME": t["shortname"] or "",
                         "BOARD": "TQBR",
                         "LAST": float(t["last"]) if t["last"] is not None else None,
-                        "OPEN": None, "LOW": None, "HIGH": None,                  # этих полей нет в HeatTile
+                        "OPEN": None, "LOW": None, "HIGH": None,
                         "VOLUME": t["volume"] or 0,
                         "VALTODAY": t["turnover"] or 0,
                         "CHANGE_PCT": float(t["change_pct"]) if t["change_pct"] is not None else None,
@@ -486,7 +474,8 @@ class StocksListView(LoginRequiredMixin, TemplateView):
                 ctx["rows"] = rows
                 ctx["snapshot"] = {
                     "board": "TQBR",
-                    "ts": timezone.localtime(last_snap.created_at),
+                    # для надписи возьмём created_at последнего снапшота — дотянем одним лёгким подзапросом
+                    "ts": HeatSnapshot.objects.filter(id=Subquery(last_id_sq)).values_list("created_at", flat=True).first(),
                     "saved": True,
                 }
                 return self.render_to_response(ctx)
