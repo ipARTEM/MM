@@ -90,7 +90,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 
 class HeatSnapshot(TimeStampedModel):
     """Снапшот теплокарты на определённую дату/момент."""
-    date = models.DateField(db_index=True)
+    date = models.DateField(default=timezone.localdate, db_index=True)
     board = models.CharField(max_length=16, default="TQBR", db_index=True)
     label = models.CharField(max_length=32, blank=True, default="")  # например: fast / fresh / close
     source = models.CharField(max_length=32, default="moex")

@@ -1,69 +1,70 @@
 {% load static %}
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
-
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}MM{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>
+      {% block title %}
+        MM
+      {% endblock %}
+    </title>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}" />
     <script defer src="{% static 'js/app.js' %}"></script>
-</head>
+  </head>
 
-<body>
+  <body>
     <header class="mm-nav">
-        <!-- 1-й этаж: бренд слева, авторизация справа -->
-        <div class="mm-container mm-topbar">
-            <a class="mm-brand" href="{% url 'mm08:home' %}">MM</a>
+      <!-- 1-й этаж: бренд слева, авторизация справа -->
+      <div class="mm-container mm-topbar">
+        <a class="mm-brand" href="{% url 'mm08:home' %}">MM</a>
 
-            <div class="mm-auth">
-                {% if request.user.is_authenticated %}
-                <a class="mm-user mm-link" href="{% url 'allusers:profile' %}" title="Профиль">
-                    {{ request.user }}
-                </a>
-                <form method="post" action="{% url 'allusers:logout' %}" style="display:inline;">
-                    {% csrf_token %}
-                    <button class="mm-link" style="background:none;border:0;cursor:pointer;">Выход</button>
-                </form>
-                {% else %}
-                <a class="mm-link" href="{% url 'allusers:login' %}">Войти</a>
-                <a class="mm-link" href="{% url 'allusers:register' %}">Регистрация</a>
-                {% endif %}
-            </div>
-
-
-            <button class="mm-burger" id="menuToggle" aria-label="Меню">☰</button>
+        <div class="mm-auth">
+          {% if request.user.is_authenticated %}
+            <a class="mm-user mm-link" href="{% url 'allusers:profile' %}" title="Профиль">{{ request.user }}</a>
+            <form method="post" action="{% url 'allusers:logout' %}" style="display:inline;">
+              {% csrf_token %}
+              <button class="mm-link" style="background:none;border:0;cursor:pointer;">Выход</button>
+            </form>
+          {% else %}
+            <a class="mm-link" href="{% url 'allusers:login' %}">Войти</a>
+            <a class="mm-link" href="{% url 'allusers:register' %}">Регистрация</a>
+          {% endif %}
         </div>
 
-        <!-- 2-й этаж: навигация, прижата вправо -->
-        <div class="mm-container mm-menubar">
-            <nav class="mm-menu" id="mainMenu">
-                {% with request.resolver_match.url_name as cur %}
-                <a class="mm-link {% if cur == 'home' %}active{% endif %}" href="{% url 'mm08:home' %}">Главная</a>
-                <a class="mm-link {% if cur == 'heatmap' %}active{% endif %}" href="{% url 'mm08:heatmap' %}">Теплокарты</a>
+        <button class="mm-burger" id="menuToggle" aria-label="Меню">☰</button>
+      </div>
 
-                
-                <a class="mm-link {% if cur == 'instrument_list' %}active{% endif %}"
-                    href="{% url 'mm08:instrument_list' %}">Инструменты</a>
-                <a class="mm-link {% if cur == 'candle_filter' %}active{% endif %}"
-                    href="{% url 'mm08:candle_filter' %}">Фильтр свечей</a>
-                <a class="mm-link {% if cur == 'dashboard' %}active{% endif %}"
-                    href="{% url 'mm08:dashboard' %}">Дашборд</a>
-                <a class="mm-link" href="{% url 'admin:index' %}">Админка</a>
-                {% endwith %}
-            </nav>
-        </div>
+      <!-- 2-й этаж: навигация, прижата вправо -->
+      <div class="mm-container mm-menubar">
+        <nav class="mm-menu" id="mainMenu">
+          {% with cur=request.resolver_match.url_name %}
+            <a class="mm-link {% if cur == 'home' %}active{% endif %}" href="{% url 'mm08:home' %}">Главная</a>
+            <a class="mm-link {% if cur == 'stocks_list' %}active{% endif %}" href="{% url 'mm08:stocks_list' %}">Акции</a>
+
+            <a class="mm-link {% if cur == 'heatmap_stocks' %}active{% endif %}" href="{% url 'mm08:heatmap_stocks' %}">Теплокарта Акции</a>
+            <a class="mm-link {% if cur == 'heatmap' %}active{% endif %}" href="{% url 'mm08:heatmap' %}">Теплокарты</a>
+
+            <a class="mm-link  {% if cur == 'instrument_list' %}active{% endif %}" href="{% url 'mm08:instrument_list' %}">Инструменты</a>
+            <a class="mm-link {% if cur == 'candle_filter' %}active{% endif %}" href="{% url 'mm08:candle_filter' %}">Фильтр свечей</a>
+            <a class="mm-link {% if cur == 'dashboard' %}active{% endif %}" href="{% url 'mm08:dashboard' %}">Дашборд</a>
+            <a class="mm-link" href="{% url 'admin:index' %}">Админка</a>
+          {% endwith %}
+        </nav>
+      </div>
     </header>
     <main class="mm-container mm-main">
-        {% block content %}{% endblock %}
-    </main>
+         {% block content %}
 
-    <footer class="mm-footer">
-        <div class="mm-container">
-            <p>© {% now "Y" %} MM | MM08 | Artem Khimin</p>
-        </div>
+      {% endblock %}
+          </main>
+
+        <footer class="mm-footer">
+      <div class="mm-container">
+        <p>
+          ©{% now 'Y' %}MM | MM08 | Artem Khimin
+        </p>
+      </div>
     </footer>
-
-</body>
-
+  </body>
 </html>

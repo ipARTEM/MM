@@ -9,3 +9,4 @@ media/
 *.sqlite3
 db.sqlite3
 __pycache__
+zip_project.py
