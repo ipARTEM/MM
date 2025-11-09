@@ -11,8 +11,9 @@ from django.conf.urls.static import static       # helper для медиа-URL
 
 urlpatterns = [
     path("admin/", admin.site.urls),                       # маршрут в админку
-    path("allusers/", include("allusers.urls")),           # маршруты приложения авторизации
     path("", include(("mm08.urls", "mm08"), namespace="mm08")),  # маршруты основного приложения
+    # path("allusers/", include("allusers.urls")),           # маршруты приложения авторизации
+    path("users/", include("allusers.urls")),     # пользователи + API токены
 ]
 
 # Подключаем URL-ы тулбара только если включён DEBUG и тулбар активирован

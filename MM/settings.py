@@ -51,6 +51,11 @@ INSTALLED_APPS = [
     # "debug_toolbar" — подключим ниже условно, чтобы в проде не торчал
 ]
 
+INSTALLED_APPS += [
+    "rest_framework.authtoken",  # добавляем поддержку токенов DRF
+    # "rest_framework_simplejwt",  # ← если решим перейти на JWT (потребуется установить пакет)
+]
+
 # Опциональный флажок для быстрой деактивации тулбара даже при DEBUG=True
 ENABLE_DEBUG_TOOLBAR = os.getenv("ENABLE_DEBUG_TOOLBAR", "1") == "1"
 
@@ -146,16 +151,26 @@ STATICFILES_DIRS = [BASE_DIR / "static"]  # папка со статикой п�
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"  # тип авто-поля id
 
-# ── DRF: базовые безопасные настройки ────────────────────────────────────────
+# === DRF: права и аутентификация по умолчанию =================================
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [
-        "rest_framework.renderers.JSONRenderer",  # JSON рендерер
-        # При необходимости можно добавить Browsable API:
-        "rest_framework.renderers.BrowsableAPIRenderer",  # удобно при разработке
+        "rest_framework.renderers.JSONRenderer",  # JSON рендерер по умолчанию
+        "rest_framework.renderers.BrowsableAPIRenderer",  # удобный UI при разработке
     ],
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",  # стандартная пагинация
-    "PAGE_SIZE": 50,  # дефолтный размер страницы (без «магических чисел» — можно вынести в .env при желании)
+    # ✅ Глобальные классы аутентификации
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",  # сессии (логин через сайт)
+        "rest_framework.authentication.TokenAuthentication",    # токены DRF (Authorization: Token <key>)
+        # "rest_framework_simplejwt.authentication.JWTAuthentication",  # ← если решим подключить JWT
+    ],
+    # ✅ Глобальные права доступа
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticatedOrReadOnly",  # чтение всем, изменения — только аутентифицированным
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",  # пагинация
+    "PAGE_SIZE": 50,  # размер страницы по умолчанию
 }
+
 
 # ── Медиа (для будущих FileField/ImageField и работы django-cleanup) ─────────
 # Ниже — безопасные дефолты: в dev файлы будут в папке проекта.
