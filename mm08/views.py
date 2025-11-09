@@ -11,16 +11,11 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views import View
 from django.views.generic import TemplateView, ListView, FormView, DetailView
 from django.shortcuts import redirect, render
-from django.db.models import Max, Prefetch
+from django.db.models import Max, Prefetch, Subquery
 from django.db import transaction
 
 from typing import Any, Dict, List
-from django.http import HttpRequest
-from django.utils import timezone
-from django.views.generic import TemplateView
-from django.contrib.auth.mixins import LoginRequiredMixin
 
-from django.db.models import Subquery
 
 
 from decimal import Decimal
@@ -31,8 +26,6 @@ from .forms import InstrumentCreateForm, CandleFilterForm
 from .services.pagination import window_numbers
 from .services.heatmap import build_snapshot  #  функция сборки
 from mm08.services.iss_client import fetch_tqbr_all
-
-from typing import Any, Dict, List
 
 
 # ---------- MIXINS ----------
@@ -513,4 +506,6 @@ class StocksListView(LoginRequiredMixin, TemplateView):
             return self.render_to_response(ctx)
 
     
-
+class ApiDemoView(TemplateView):
+    """Простая демонстрационная страница для работы с DRF API."""
+    template_name = "mm08/api_demo.html"  # указываем наш шаблон 

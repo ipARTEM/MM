@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "rest_framework",                  # DRF — API фреймворк
     "allusers",                        # приложение с кастомной моделью пользователя
     "mm08",                            # основное приложение интерфейса
+     "django_cleanup.apps.CleanupConfig", # django-cleanup (удаление файлов)
     # "debug_toolbar" — подключим ниже условно, чтобы в проде не торчал
 ]
 
@@ -145,12 +146,21 @@ STATICFILES_DIRS = [BASE_DIR / "static"]  # папка со статикой п�
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"  # тип авто-поля id
 
-# ── DRF настройки (ваши текущие) ────────────────────────────────────────────
-
+# ── DRF: базовые безопасные настройки ────────────────────────────────────────
 REST_FRAMEWORK = {
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",  # пагинация по страницам
-    "PAGE_SIZE": 100,  # размер страницы по умолчанию
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",  # JSON рендерер
+        # При необходимости можно добавить Browsable API:
+        "rest_framework.renderers.BrowsableAPIRenderer",  # удобно при разработке
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",  # стандартная пагинация
+    "PAGE_SIZE": 50,  # дефолтный размер страницы (без «магических чисел» — можно вынести в .env при желании)
 }
+
+# ── Медиа (для будущих FileField/ImageField и работы django-cleanup) ─────────
+# Ниже — безопасные дефолты: в dev файлы будут в папке проекта.
+MEDIA_URL = "/media/"      # URL-префикс для медиа
+MEDIA_ROOT = BASE_DIR / "media"  # директория хранения медиафайлов
 
 # ── Django Debug Toolbar: INTERNAL_IPS и конфигурация ───────────────────────
 
