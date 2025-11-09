@@ -32,10 +32,21 @@ from .serializers import (
 )  # импорт сериализаторов 
 
 
-class HeatSnapshotViewSet(mixins.ListModelMixin,
+from rest_framework import permissions  # импорт стандартных прав DRF
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication  # классы аутентификации
+# from rest_framework_simplejwt.authentication import JWTAuthentication  # ← если решим добавить JWT
+# Если нужна более строгая логика — подключим кастомный пермишен:
+from .permissions import IsStaffOrReadOnly  # наш пермишен (см. файл ниже)
+
+
+class HeatSnapshotViewSet(viewsets.ViewSet, 
+                          mixins.ListModelMixin,
                           mixins.RetrieveModelMixin,
                           viewsets.GenericViewSet):
     """ViewSet для списка и детального просмотра снимков теплокарты."""
+    """Класс выдаёт snapshot теплокарты; чтение без авторизации, изменения — только аутентифицированным."""
+    authentication_classes = [SessionAuthentication, TokenAuthentication]  # классы аутентификации
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]           # права: чтение всем
     queryset = HeatSnapshot.objects.all().order_by("-date", "-created_at")  # базовый QuerySet  
     serializer_class = HeatSnapshotSerializer                              # сериализатор по умолчанию 
     # pagination_class = DefaultPagination  # ← включаем пагинацию для списка снапшотов 
@@ -57,10 +68,14 @@ class HeatSnapshotViewSet(mixins.ListModelMixin,
         self.serializer_class = HeatSnapshotWithTilesSerializer         # временно меняем сериализатор  
         return super().retrieve(request, *args, **kwargs)               # зовём базовую реализацию  
 
-class HeatTileViewSet(mixins.ListModelMixin,
+class HeatTileViewSet(viewsets.ViewSet,
+                      mixins.ListModelMixin,
                       mixins.RetrieveModelMixin,
                       viewsets.GenericViewSet):
     """ViewSet для плиток теплокарты (общий список и детальный просмотр)."""
+    """Класс выдаёт плитки теплокарты; аналогично — read-only публично."""
+    authentication_classes = [SessionAuthentication, TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     queryset = HeatTile.objects.select_related("snapshot").all().order_by("-change_pct")  # оптимизация связей  # ← комментарий
     serializer_class = HeatTileSerializer  
 
@@ -88,8 +103,13 @@ except Exception:
 # ==============================================================================
 #                               ПАГИНАЦИЯ DRF
 # ==============================================================================
-class DefaultPagination(PageNumberPagination):
+class DefaultPagination(viewsets.ViewSet, PageNumberPagination):
     """Стандартная пагинация: по умолчанию 50, через ?page_size= можно менять (до max=500)."""
+    """Работа со списками инструментов; чтение всем, изменения — только аутентифицированным."""
+    authentication_classes = [SessionAuthentication, TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    # Если захочешь ограничить запись только staff — можно:
+    # permission_classes = [IsStaffOrReadOnly]
     page_size = 50
     page_size_query_param = "page_size"
     max_page_size = 500
@@ -107,8 +127,11 @@ class InstrumentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
 # ==============================================================================
 #                              VIEWSET ДЛЯ СВЕЧЕЙ
 # ==============================================================================
-class CandleViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+class CandleViewSet(viewsets.ViewSet, mixins.ListModelMixin, viewsets.GenericViewSet):
     """Список свечей с фильтрами (?instrument=, ?date_from=, ?date_to=)."""
+    """Выдача свечей; публичное чтение, запись — только аутентификация."""
+    authentication_classes = [SessionAuthentication, TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     serializer_class = CandleSerializer
     pagination_class = DefaultPagination
 
