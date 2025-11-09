@@ -1,5 +1,10 @@
-# Project/mm08/api_views.py
-# Полный рабочий файл API-представлений. Совместим с текущими urls и сервисами.
+# MM/mm08/api_views.py
+# ─────────────────────────────────────────────────────────────────────────────
+# Путь и имя файла: MM/mm08/api_views.py
+# Назначение: DRF-представления (ViewSet’ы) для API приложения mm08
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 from __future__ import annotations  # поддержка современных аннотаций
 
 # ===== БАЗОВЫЕ ИМПОРТЫ =========================================================
@@ -17,8 +22,50 @@ from rest_framework.response import Response  # DRF-ответ
 from rest_framework.pagination import PageNumberPagination  # пагинация DRF
 
 # ===== НАШИ МОДЕЛИ И СЕРИАЛИЗАТОРЫ ============================================
-from .models import Instrument, Candle  # модели
-from .serializers import InstrumentSerializer, CandleSerializer  # сериализаторы
+from .models import Instrument, Candle, HeatSnapshot, HeatTile   # модели
+from .serializers import (
+    InstrumentSerializer,   # сериализатор инструмента  
+    CandleSerializer,       # сериализатор свечей       
+    HeatSnapshotSerializer,                 # сериализатор снапшота (без tiles)  
+    HeatSnapshotWithTilesSerializer,        # сериализатор снапшота (с tiles)     
+    HeatTileSerializer,                     # сериализатор плитки теплокарты 
+)  # импорт сериализаторов 
+
+
+class HeatSnapshotViewSet(mixins.ListModelMixin,
+                          mixins.RetrieveModelMixin,
+                          viewsets.GenericViewSet):
+    """ViewSet для списка и детального просмотра снимков теплокарты."""
+    queryset = HeatSnapshot.objects.all().order_by("-date", "-created_at")  # базовый QuerySet  
+    serializer_class = HeatSnapshotSerializer                              # сериализатор по умолчанию 
+    # pagination_class = DefaultPagination  # ← включаем пагинацию для списка снапшотов 
+
+    @action(detail=True, methods=["get"])
+    def tiles(self, request, pk: int | str | None = None) -> Response:
+        """Отдать все плитки для конкретного снапшота (pk из URL)."""
+        snapshot = get_object_or_404(HeatSnapshot, pk=pk)              # получаем снапшот  
+        qs = snapshot.tiles.all().order_by("-change_pct")               # берём связанные плитки  
+        page = self.paginate_queryset(qs)                               # применяем пагинацию  
+        if page is not None:                                            # если есть страница  
+            ser = HeatTileSerializer(page, many=True)                   # сериализуем страницу  
+            return self.get_paginated_response(ser.data)                # отдаём с метаданными пагинации  
+        ser = HeatTileSerializer(qs, many=True)                         # сериализуем без пагинации  
+        return Response(ser.data)                                       # обычный ответ  
+
+    def retrieve(self, request, *args: Any, **kwargs: Any) -> Response:
+        """Переопределяем retrieve, чтобы отдавать снапшот сразу с 'tiles' (удобно в UI)."""
+        self.serializer_class = HeatSnapshotWithTilesSerializer         # временно меняем сериализатор  
+        return super().retrieve(request, *args, **kwargs)               # зовём базовую реализацию  
+
+class HeatTileViewSet(mixins.ListModelMixin,
+                      mixins.RetrieveModelMixin,
+                      viewsets.GenericViewSet):
+    """ViewSet для плиток теплокарты (общий список и детальный просмотр)."""
+    queryset = HeatTile.objects.select_related("snapshot").all().order_by("-change_pct")  # оптимизация связей  # ← комментарий
+    serializer_class = HeatTileSerializer  
+
+
+
 
 # ===== СЕРВИСЫ ДЛЯ MOEX (КАТАЛОГ И МЕТАДАННЫЕ) ================================
 from .services.moex_catalog import get_moex_info, get_moex_list  # инфо и списки

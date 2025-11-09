@@ -1,0 +1,133 @@
+<!-- MM/templates/mm08/api_demo.html -->
+<!-- Назначение: простая демо-страница для работы с DRF API (heatmap) -->
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><!-- кодировка -->
+  <title>API Demo (Heatmap)</title><!-- заголовок страницы -->
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- адаптивность -->
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 24px; } /* простой шрифт и отступы */
+    .row { display: flex; gap: 24px; align-items: flex-start; }       /* две колонки */
+    .col { flex: 1; min-width: 320px; }                               /* ширина колонок */
+    table { width: 100%; border-collapse: collapse; }                 /* таблица на всю ширину */
+    th, td { border: 1px solid #ddd; padding: 6px 8px; }              /* границы и отступы */
+    th { background: #f6f6f6; }                                       /* фон заголовков */
+    button { padding: 6px 10px; cursor: pointer; }                    /* стиль кнопок */
+    .muted { color: #888; }                                           /* приглушённый текст */
+  </style>
+</head>
+<body>
+  <h1>API Demo: Heatmap</h1><!-- заголовок -->
+  <p class="muted">Список снапшотов и плитки (через DRF API).</p><!-- подзаголовок -->
+
+  <div class="row">
+    <div class="col">
+      <h2>Снапшоты</h2><!-- заголовок колонки -->
+      <table id="snapshots"><thead><tr>
+        <th>ID</th><th>Дата</th><th>Доска</th><th>Метка</th><th></th>
+      </tr></thead><tbody></tbody></table><!-- таблица снапшотов -->
+      <p id="snapshots-pager" class="muted"></p><!-- пагинация -->
+    </div>
+
+    <div class="col">
+      <h2>Плитки</h2><!-- заголовок -->
+      <table id="tiles"><thead><tr>
+        <th>Тикер</th><th>Изм., %</th><th>Цена</th>
+      </tr></thead><tbody></tbody></table><!-- таблица плиток -->
+      <p id="tiles-pager" class="muted"></p><!-- пагинация -->
+    </div>
+  </div>
+
+  <script>
+    // Базовый URL API (относительно текущего сайта)
+    const API = "/api/"; // соответствует маршрутам mm08.api_urls
+
+    // Утилита: загрузить JSON по URL
+    async function getJSON(url) {
+      const r = await fetch(url, {headers: {"Accept": "application/json"}});
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return await r.json();
+    }
+
+    // Отрисовка таблицы снапшотов
+    async function loadSnapshots(url = API + "heat/snapshots/") {
+      const data = await getJSON(url);
+      const tbody = document.querySelector("#snapshots tbody");
+      tbody.innerHTML = "";
+      (data.results || data).forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.id}</td>
+          <td>${row.date}</td>
+          <td>${row.board}</td>
+          <td>${row.label || ""}</td>
+          <td><button data-id="${row.id}">Открыть плитки</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+      // Пагинация
+      const pager = document.getElementById("snapshots-pager");
+      pager.innerHTML = "";
+      if (data.previous) {
+        const a = document.createElement("a");
+        a.href = "#"; a.textContent = "← Предыдущая";
+        a.onclick = (e) => { e.preventDefault(); loadSnapshots(data.previous); };
+        pager.appendChild(a);
+        pager.appendChild(document.createTextNode(" "));
+      }
+      if (data.next) {
+        const a = document.createElement("a");
+        a.href = "#"; a.textContent = "Следующая →";
+        a.onclick = (e) => { e.preventDefault(); loadSnapshots(data.next); };
+        pager.appendChild(a);
+      }
+      // Навешиваем обработчики
+      tbody.querySelectorAll("button[data-id]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          loadTiles(API + "heat/snapshots/" + btn.dataset.id + "/tiles/");
+        });
+      });
+    }
+
+    // Отрисовка плиток
+    async function loadTiles(url) {
+      const data = await getJSON(url);
+      const tbody = document.querySelector("#tiles tbody");
+      tbody.innerHTML = "";
+      (data.results || data).forEach(row => {
+        const tr = document.createElement("tr");
+        const pct = row.change_pct ?? "";  // защита от null
+        tr.innerHTML = `
+          <td>${row.ticker}</td>
+          <td>${pct}</td>
+          <td>${row.last}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      // Пагинация
+      const pager = document.getElementById("tiles-pager");
+      pager.innerHTML = "";
+      if (data.previous) {
+        const a = document.createElement("a");
+        a.href = "#"; a.textContent = "← Предыдущая";
+        a.onclick = (e) => { e.preventDefault(); loadTiles(data.previous); };
+        pager.appendChild(a);
+        pager.appendChild(document.createTextNode(" "));
+      }
+      if (data.next) {
+        const a = document.createElement("a");
+        a.href = "#"; a.textContent = "Следующая →";
+        a.onclick = (e) => { e.preventDefault(); loadTiles(data.next); };
+        pager.appendChild(a);
+      }
+    }
+
+    // Инициализация — загрузим первую страницу
+    loadSnapshots().catch(err => {
+      document.querySelector("#snapshots tbody").innerHTML =
+        `<tr><td colspan="5">Ошибка загрузки: ${err.message}</td></tr>`;
+    });
+  </script>
+</body>
+</html>

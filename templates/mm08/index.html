@@ -2,6 +2,15 @@
 {% block title %}Главная — MM08{% endblock %}
             {% block content %}
 <h1>MM08 — Django MOEX Parser</h1>
-            <p>
-                Используй команду <code>load_moex</code> для загрузки свечей, затем смотри их в разделе «Инструменты».</p>
+            <p>Используй команду <code>load_moex</code> для загрузки свечей, затем смотри их в разделе «Инструменты».</p>
+            <p><h3>Проверить DRF:</h3></p>
+            <p>https://.../api/ — корень роутера (Browsable API включен).
+            <p>https://.../api/heat/snapshots/ — список снапшотов.
+            <p>https://.../api/heat/snapshots/{id}/ — снапшот с вложенными плитками.
+            <p>https://.../api/heat/snapshots/{id}/tiles/ — плитки конкретного снапшота.
+            <p>https://.../api/heat/tiles/ — общий список плиток.
+            <p>https://.../api/instruments/ — инстументы
+            <p>https://.../api/candles/ — свечки
+            <p><h3>Открыть демо-страницу:</h3>
+            <p>https://.../api-demo/ — небольшой UI на fetch
 {% endblock %}

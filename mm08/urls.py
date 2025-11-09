@@ -9,6 +9,7 @@ urlpatterns = [
 
     # API 
     path("api/", include(("mm08.api_urls", "mm08_api"), namespace="mm08_api")),
+    path("api-demo/", views.ApiDemoView.as_view(), name="api_demo"),  # демо-страница API  
 
 
     # Инструменты
