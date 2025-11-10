@@ -17,6 +17,11 @@ handler403 = "mm08.views.custom_permission_denied"
 # BASE_DIR — корень проекта (папка MM). Используем для формирования других путей.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# ALLOWED_HOSTS и доверенные источники CSRF
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")  # список хостов из переменной окружения
+CSRF_TRUSTED_ORIGINS = [orig.strip() for orig in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if orig.strip()]  # доверенные источники CSRF
+
+
 # ── Быстрая стартовая секция (важное для безопасности) ───────────────────────
 
 # Подгружаем файл окружения .env, расположенный в корне проекта
@@ -126,6 +131,21 @@ DATABASES = {
     }
 }
 
+# Переключение БД на PostgreSQL при наличии ENV переменных
+if os.getenv("DB_ENGINE", "").lower() == "postgresql":
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("POSTGRES_DB", "mm_db"),
+            "USER": os.getenv("POSTGRES_USER", "mm_user"),
+            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "mm_pass"),
+            "HOST": os.getenv("POSTGRES_HOST", "127.0.0.1"),
+            "PORT": int(os.getenv("POSTGRES_PORT", "5432")),
+            "CONN_MAX_AGE": 60,
+        }
+    }
+# если DB_ENGINE не задан — останется  блок с SQLite без изменений
+
 # ── Валидаторы паролей ──────────────────────────────────────────────────────
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -146,6 +166,9 @@ USE_TZ = True                 # хранить даты/время в БД в UT
 
 STATIC_URL = "static/"                 # URL-префикс для статики
 STATICFILES_DIRS = [BASE_DIR / "static"]  # папка со статикой проекта
+STATIC_ROOT = os.getenv("STATIC_ROOT", BASE_DIR / "staticfiles")
+MEDIA_URL = "/media/"
+MEDIA_ROOT = os.getenv("MEDIA_ROOT", BASE_DIR / "media")
 
 # ── Первичный ключ по умолчанию ─────────────────────────────────────────────
 
